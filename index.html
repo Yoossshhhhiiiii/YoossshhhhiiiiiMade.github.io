@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#102a43" />
+    <meta name="description" content="水電材料庫存與倉位管理" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>庫存管家｜水電材料管理</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">水電材料庫存</p>
+          <h1>庫存管家</h1>
+        </div>
+        <button class="icon-button" id="notifyButton" aria-label="通知設定">⌁</button>
+      </header>
+
+      <section class="scan-card">
+        <div class="scan-icon">▦</div>
+        <div class="scan-copy">
+          <strong>掃描倉庫 QR Code</strong>
+          <span>快速開啟指定樓層的材料清單</span>
+        </div>
+        <button class="primary-button compact" id="scanButton">開始掃描</button>
+      </section>
+
+      <section class="summary-grid" aria-label="庫存摘要">
+        <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
+        <article class="summary-card warning"><span>低庫存</span><strong id="lowStockCount">0</strong><small>項待補</small></article>
+        <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
+      </section>
+
+      <section class="workspace-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">快速操作</p><h2>材料清單</h2></div>
+          <button class="text-button" id="statsButton">查看月統計 →</button>
+        </div>
+
+        <div class="filters">
+          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋材料名稱或規格" /></label>
+          <label class="select-box"><span>位置</span><select id="locationFilter"></select></label>
+        </div>
+
+        <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
+        <div class="material-list" id="materialList"></div>
+      </section>
+
+      <section class="stats-panel hidden" id="statsPanel">
+        <div class="section-heading"><div><p class="eyebrow">使用分析</p><h2>本月用量統計</h2></div><button class="text-button" id="closeStats">收合</button></div>
+        <div class="chart" id="usageChart" aria-label="本月材料使用量圖表"></div>
+        <div class="report-row"><span>領用最多</span><strong id="topUsed">—</strong></div>
+        <div class="report-row"><span>本月補貨</span><strong id="monthlyRestock">0 件</strong></div>
+      </section>
+
+      <footer class="bottom-note">資料會保存在此裝置，正式版可同步多人使用並串接 LINE 通知。</footer>
+    </main>
+
+    <div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card">
+        <button class="close-button" data-close-modal aria-label="關閉">×</button>
+        <p class="eyebrow" id="modalEyebrow">庫存異動</p>
+        <h2 id="modalTitle">調整庫存</h2>
+        <p class="modal-location" id="modalLocation"></p>
+        <div class="stepper"><button id="decreaseStep">−</button><strong id="stepValue">1</strong><button id="increaseStep">＋</button></div>
+        <label class="field-label">異動原因<select id="reasonSelect"><option>工地使用</option><option>入庫補貨</option><option>退料</option><option>損耗</option><option>盤點調整</option></select></label>
+        <label class="field-label">備註（選填）<input id="noteInput" placeholder="例如：工地 A 使用" /></label>
+        <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
