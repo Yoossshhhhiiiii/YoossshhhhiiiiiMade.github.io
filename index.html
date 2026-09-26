@@ -37,7 +37,10 @@
       <section class="workspace-panel">
         <div class="section-heading">
           <div><p class="eyebrow">快速操作</p><h2>材料清單</h2></div>
-          <button class="text-button" id="statsButton">查看月統計 →</button>
+          <div class="heading-actions">
+            <button class="primary-button compact" id="newMaterialButton">＋ 新增材料</button>
+            <button class="text-button" id="statsButton">查看月統計 →</button>
+          </div>
         </div>
 
         <div class="filters">
@@ -70,6 +73,47 @@
         <label class="field-label">異動原因<select id="reasonSelect"><option>工地使用</option><option>入庫補貨</option><option>退料</option><option>損耗</option><option>盤點調整</option></select></label>
         <label class="field-label">備註（選填）<input id="noteInput" placeholder="例如：工地 A 使用" /></label>
         <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="materialModal" role="dialog" aria-modal="true" aria-labelledby="materialModalTitle">
+      <div class="modal-backdrop" data-close-material-modal></div>
+      <div class="modal-card material-modal-card">
+        <button class="close-button" type="button" data-close-material-modal aria-label="關閉">×</button>
+        <p class="eyebrow">材料資料</p>
+        <h2 id="materialModalTitle">新增材料</h2>
+        <form id="materialForm">
+          <label class="field-label" for="materialName">材料名稱 <span class="required-mark">＊</span>
+            <input id="materialName" name="name" required maxlength="100" placeholder="例如：PVC 管 2 吋" autocomplete="off" />
+          </label>
+          <div class="field-grid">
+            <label class="field-label" for="materialCategory">分類／規格 <span class="required-mark">＊</span>
+              <input id="materialCategory" name="category" required maxlength="80" placeholder="例如：給水管材" />
+            </label>
+            <label class="field-label" for="materialUnit">單位 <span class="required-mark">＊</span>
+              <input id="materialUnit" name="unit" required maxlength="20" placeholder="例如：支、個、捲" />
+            </label>
+          </div>
+          <div class="field-grid" id="initialStockRow">
+            <label class="field-label" for="materialStock">初始庫存 <span class="required-mark">＊</span>
+              <input id="materialStock" name="stock" type="number" inputmode="numeric" required min="0" step="1" value="0" />
+            </label>
+            <label class="field-label" for="materialAlert">警戒值 <span class="required-mark">＊</span>
+              <input id="materialAlert" name="alert" type="number" inputmode="numeric" required min="0" step="1" value="5" />
+            </label>
+          </div>
+          <label class="field-label alert-only hidden" for="materialAlertEdit">警戒值 <span class="required-mark">＊</span>
+            <input id="materialAlertEdit" name="alertEdit" type="number" inputmode="numeric" min="0" step="1" value="5" />
+          </label>
+          <label class="field-label" for="materialLocation">倉庫位置 <span class="required-mark">＊</span>
+            <select id="materialLocation" name="location" required></select>
+          </label>
+          <label class="field-label" for="materialDetail">詳細位置 <span class="required-mark">＊</span>
+            <input id="materialDetail" name="detail" required maxlength="100" placeholder="例如：A-03 貨架／第 2 層" />
+          </label>
+          <p class="form-hint" id="materialFormHint">庫存與警戒值請填入 0 或正整數。</p>
+          <div class="modal-actions"><button class="secondary-button" type="button" data-close-material-modal>取消</button><button class="primary-button" type="submit" id="saveMaterialButton">儲存材料</button></div>
+        </form>
       </div>
     </div>
 
