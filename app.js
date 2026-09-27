@@ -11,8 +11,10 @@ const seed = [
 const storedMaterials = localStorage.getItem('inventory-materials');
 let materials = storedMaterials ? JSON.parse(storedMaterials) : seed;
 let transactions = JSON.parse(localStorage.getItem('inventory-transactions') || '[]');
+let customLocations = JSON.parse(localStorage.getItem('inventory-locations') || '[]');
 let activeMaterial = null;
 let editingMaterialId = null;
+let locationReturnToMaterial = false;
 let step = 1;
 const $ = id => document.getElementById(id);
 
@@ -30,11 +32,25 @@ function unitOf(item) { return item.spec.split('／')[1] || '件'; }
 function formatNumber(number) { return new Intl.NumberFormat('zh-TW').format(number); }
 function localMonth(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
 
+function allLocations() {
+  return [...new Set([...LOCATIONS.slice(1), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean);
+}
+
+function renderLocationOptions() {
+  const selectedFilter = $('locationFilter').value || '全部位置';
+  const selectedMaterial = $('materialLocation').value || '12樓西';
+  const locations = allLocations();
+  $('locationFilter').replaceChildren(...['全部位置', ...locations].map(location => new Option(location, location)));
+  $('materialLocation').replaceChildren(...locations.map(location => new Option(location, location)));
+  $('locationFilter').value = selectedFilter;
+  $('materialLocation').value = selectedMaterial;
+}
+
 function render() {
   const term = $('searchInput').value.trim().toLowerCase();
   const location = $('locationFilter').value;
   const filtered = materials.filter(item =>
-    (!term || `${item.name} ${item.spec} ${item.detail}`.toLowerCase().includes(term)) &&
+    (!term || `${item.name} ${item.spec} ${item.detail || ''}`.toLowerCase().includes(term)) &&
     (location === '全部位置' || item.location === location)
   );
   const month = localMonth();
@@ -49,7 +65,7 @@ function render() {
     <article class="material-card ${isLow(item) ? 'low' : ''}">
       <div>
         <div class="material-name">${escapeHTML(item.name)}</div>
-        <div class="material-meta">${escapeHTML(item.spec)} · ${escapeHTML(item.location)} · ${escapeHTML(item.detail)}</div>
+        <div class="material-meta">${escapeHTML(item.spec)} · ${escapeHTML(item.location)}${item.detail ? ` · ${escapeHTML(item.detail)}` : ''}</div>
         <div class="material-actions">
           <button class="round-button minus" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHTML(item.name)} 庫存">−</button>
           <button class="round-button" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHTML(item.name)} 庫存">＋</button>
@@ -86,7 +102,7 @@ function openAdjustment(item, type) {
   $('stepValue').textContent = step;
   $('modalEyebrow').textContent = type;
   $('modalTitle').textContent = `${type}｜${item.name}`;
-  $('modalLocation').textContent = `${item.location} · ${item.detail} · 目前 ${item.stock} ${unitOf(item)}`;
+  $('modalLocation').textContent = `${item.location}${item.detail ? ` · ${item.detail}` : ''} · 目前 ${item.stock} ${unitOf(item)}`;
   $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '工地使用';
   $('noteInput').value = '';
   $('modal').classList.remove('hidden');
@@ -125,6 +141,43 @@ function closeMaterialForm() {
   editingMaterialId = null;
 }
 
+function openLocationForm(fromMaterial = false) {
+  locationReturnToMaterial = fromMaterial;
+  $('locationForm').reset();
+  if (fromMaterial) $('materialModal').classList.add('hidden');
+  $('locationModal').classList.remove('hidden');
+  $('newLocationName').focus();
+}
+
+function closeLocationForm() {
+  $('locationModal').classList.add('hidden');
+  if (locationReturnToMaterial) {
+    $('materialModal').classList.remove('hidden');
+    $('materialLocation').focus();
+  } else {
+    $('locationFilter').focus();
+  }
+  locationReturnToMaterial = false;
+}
+
+function saveLocationFromForm(event) {
+  event.preventDefault();
+  const name = $('newLocationName').value.trim();
+  if (!name) return toast('請輸入位置名稱');
+  if (allLocations().some(location => location.toLowerCase() === name.toLowerCase()) || name === '全部位置') {
+    return toast('這個位置已在選單中');
+  }
+  const fromMaterial = locationReturnToMaterial;
+  customLocations.push(name);
+  localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
+  renderLocationOptions();
+  if (fromMaterial) $('materialLocation').value = name;
+  else $('locationFilter').value = name;
+  closeLocationForm();
+  if (!fromMaterial) render();
+  toast('新位置已加入選單');
+}
+
 function toast(message) {
   $('toast').textContent = message;
   $('toast').classList.remove('hidden');
@@ -144,7 +197,7 @@ function saveMaterialFromForm(event) {
   const stock = Number($('materialStock').value);
   const alert = Number(editing ? $('materialAlertEdit').value : $('materialAlert').value);
 
-  if (!name || !category || !unit || !detail || !location) return toast('請填寫所有必填欄位');
+  if (!name || !category || !unit || !location) return toast('請填寫所有必填欄位');
   if ((!editing && (!Number.isSafeInteger(stock) || stock < 0)) || !Number.isSafeInteger(alert) || alert < 0) {
     return toast('庫存與警戒值須為 0 或正整數');
   }
@@ -166,17 +219,22 @@ function saveMaterialFromForm(event) {
 }
 
 function init() {
-  $('locationFilter').innerHTML = LOCATIONS.map(location => `<option>${location}</option>`).join('');
-  $('materialLocation').innerHTML = LOCATIONS.slice(1).map(location => `<option>${location}</option>`).join('');
+  renderLocationOptions();
   render();
   $('searchInput').addEventListener('input', render);
   $('locationFilter').addEventListener('change', render);
   $('newMaterialButton').addEventListener('click', () => openMaterialForm());
+  $('addLocationFromFilter').addEventListener('click', () => openLocationForm());
+  $('addLocationFromForm').addEventListener('click', () => openLocationForm(true));
+  $('locationForm').addEventListener('submit', saveLocationFromForm);
   $('materialForm').addEventListener('submit', saveMaterialFromForm);
+  document.querySelectorAll('[data-close-location-modal]').forEach(button => button.addEventListener('click', closeLocationForm));
   document.querySelectorAll('[data-close-material-modal]').forEach(button => button.addEventListener('click', closeMaterialForm));
   document.querySelectorAll('[data-close-modal]').forEach(button => button.addEventListener('click', closeAdjustment));
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { closeMaterialForm(); closeAdjustment(); }
+    if (event.key !== 'Escape') return;
+    if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
+    else { closeMaterialForm(); closeAdjustment(); }
   });
   $('materialList').addEventListener('click', event => {
     const button = event.target.closest('[data-action]');

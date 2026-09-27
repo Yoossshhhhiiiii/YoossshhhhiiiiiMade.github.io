@@ -45,7 +45,10 @@
 
         <div class="filters">
           <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋材料名稱或規格" /></label>
-          <label class="select-box"><span>位置</span><select id="locationFilter"></select></label>
+          <div class="location-filter-group">
+            <label class="select-box"><span>位置</span><select id="locationFilter"></select></label>
+            <button class="add-location-button" type="button" id="addLocationFromFilter">＋ 新增位置</button>
+          </div>
         </div>
 
         <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
@@ -108,11 +111,27 @@
           <label class="field-label" for="materialLocation">倉庫位置 <span class="required-mark">＊</span>
             <select id="materialLocation" name="location" required></select>
           </label>
-          <label class="field-label" for="materialDetail">詳細位置 <span class="required-mark">＊</span>
-            <input id="materialDetail" name="detail" required maxlength="100" placeholder="例如：A-03 貨架／第 2 層" />
+          <button class="add-location-button form-location-button" type="button" id="addLocationFromForm">＋ 新增位置選項</button>
+          <label class="field-label" for="materialDetail">詳細位置（選填）
+            <input id="materialDetail" name="detail" maxlength="100" placeholder="例如：A-03 貨架／第 2 層" />
           </label>
           <p class="form-hint" id="materialFormHint">庫存與警戒值請填入 0 或正整數。</p>
           <div class="modal-actions"><button class="secondary-button" type="button" data-close-material-modal>取消</button><button class="primary-button" type="submit" id="saveMaterialButton">儲存材料</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="locationModal" role="dialog" aria-modal="true" aria-labelledby="locationModalTitle">
+      <div class="modal-backdrop" data-close-location-modal></div>
+      <div class="modal-card location-modal-card">
+        <button class="close-button" type="button" data-close-location-modal aria-label="關閉">×</button>
+        <p class="eyebrow">倉庫位置</p>
+        <h2 id="locationModalTitle">新增位置</h2>
+        <form id="locationForm">
+          <label class="field-label" for="newLocationName">位置名稱 <span class="required-mark">＊</span>
+            <input id="newLocationName" required maxlength="40" placeholder="例如：地下 1 樓、13樓西" autocomplete="off" />
+          </label>
+          <div class="modal-actions"><button class="secondary-button" type="button" data-close-location-modal>取消</button><button class="primary-button" type="submit">儲存位置</button></div>
         </form>
       </div>
     </div>
