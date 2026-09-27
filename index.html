@@ -1,141 +1,142 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0e7490" />
-  <title>宿舍營運台｜住宿管理</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230e7490'/%3E%3Cpath d='M14 31 32 15l18 16v19H14z' fill='none' stroke='white' stroke-width='5'/%3E%3Cpath d='M24 50V36h16v14' fill='none' stroke='white' stroke-width='5'/%3E%3C/svg%3E" />
-  <style>
-    :root { --ink:#12303a; --muted:#6a7d82; --line:#d9e5e7; --paper:#f5faf9; --card:#fff; --teal:#0e7490; --teal-deep:#075985; --mint:#dff6ee; --gold:#fff1c9; --coral:#ffe2dd; --shadow:0 18px 50px rgba(8,55,64,.09); }
-    * { box-sizing:border-box; }
-    body { margin:0; color:var(--ink); background:var(--paper); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans TC", "PingFang TC", sans-serif; font-size:16px; }
-    button, input, select { font:inherit; }
-    button { cursor:pointer; border:0; }
-    .app { min-height:100vh; display:grid; grid-template-columns:248px 1fr; }
-    aside { background:#0b3039; color:#dcecee; padding:26px 18px; display:flex; flex-direction:column; gap:30px; }
-    .brand { display:flex; gap:12px; align-items:center; padding:0 10px; }
-    .brand-mark { width:39px; height:39px; display:grid; place-items:center; border-radius:12px; background:#23a9a6; color:#fff; font-size:21px; box-shadow:0 8px 18px rgba(35,169,166,.28); }
-    .brand strong { display:block; font-size:16px; letter-spacing:.04em; color:#fff; }
-    .brand span { display:block; margin-top:3px; color:#91b3b9; font-size:12px; }
-    .nav-label { color:#6e969d; font-size:11px; letter-spacing:.16em; margin:0 10px 8px; }
-    nav { display:grid; gap:7px; }
-    .nav-btn { width:100%; display:flex; align-items:center; gap:12px; padding:12px 13px; color:#b8d0d3; background:transparent; border-radius:10px; text-align:left; transition:.2s; }
-    .nav-btn:hover, .nav-btn.active { background:#174952; color:white; }
-    .nav-btn .ico { width:23px; text-align:center; font-size:18px; }
-    .side-foot { margin-top:auto; padding:15px 12px; border:1px solid #2b5860; border-radius:12px; color:#9abcc0; font-size:12px; line-height:1.7; }
-    main { min-width:0; padding:30px 34px 44px; }
-    .topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:26px; }
-    .eyebrow { color:var(--teal); font-weight:750; font-size:13px; letter-spacing:.08em; }
-    h1 { margin:5px 0 5px; font-size:30px; letter-spacing:-.03em; }
-    .sub { margin:0; color:var(--muted); }
-    .actions { display:flex; gap:9px; flex-wrap:wrap; justify-content:flex-end; }
-    .btn { padding:11px 15px; border-radius:9px; font-weight:700; transition:.2s; }
-    .btn-primary { background:var(--teal); color:white; box-shadow:0 7px 16px rgba(14,116,144,.2); }
-    .btn-primary:hover { background:var(--teal-deep); transform:translateY(-1px); }
-    .btn-soft { color:var(--teal-deep); background:#e2f3f3; }
-    .btn-plain { color:var(--muted); background:white; border:1px solid var(--line); }
-    .view { display:none; animation:fade .25s ease; }
-    .view.active { display:block; }
-    @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
-    .stats { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:15px; margin-bottom:19px; }
-    .stat, .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); }
-    .stat { padding:19px; position:relative; overflow:hidden; }
-    .stat:after { content:""; position:absolute; right:-25px; bottom:-30px; width:90px; height:90px; border-radius:50%; background:#e7f6f2; }
-    .stat .label { color:var(--muted); font-size:13px; }
-    .stat .num { margin:9px 0 4px; font-size:31px; font-weight:800; letter-spacing:-.06em; }
-    .stat .hint { color:var(--muted); font-size:12px; }
-    .green { color:#16805f; } .amber { color:#aa7210; } .blue { color:var(--teal); } .red { color:#c65342; }
-    .grid-two { display:grid; grid-template-columns:1.36fr 1fr; gap:19px; }
-    .panel { padding:20px; }
-    .panel-head { display:flex; justify-content:space-between; gap:15px; align-items:flex-start; margin-bottom:17px; }
-    .panel h2 { margin:0; font-size:18px; letter-spacing:-.02em; }
-    .panel-note { color:var(--muted); font-size:13px; margin:4px 0 0; }
-    .link { color:var(--teal); font-weight:750; font-size:13px; background:transparent; padding:0; }
-    .activity { display:grid; gap:0; }
-    .activity-row { display:grid; grid-template-columns:35px 1fr auto; align-items:center; gap:11px; padding:13px 0; border-top:1px solid #edf2f2; }
-    .avatar { width:35px; height:35px; border-radius:50%; display:grid; place-items:center; background:#d9f2ec; color:#087d75; font-weight:800; font-size:13px; }
-    .activity-row strong { font-size:14px; } .activity-row p { margin:3px 0 0; color:var(--muted); font-size:12px; }
-    .time { color:var(--muted); font-size:12px; }
-    .badge { display:inline-flex; align-items:center; gap:5px; padding:5px 9px; border-radius:999px; font-size:12px; font-weight:750; white-space:nowrap; }
-    .badge:before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
-    .badge.green { background:#e3f7ed; } .badge.amber { background:#fff3d5; } .badge.red { background:#ffebe7; }
-    .bar-group { display:grid; gap:16px; }
-    .bar-label { display:flex; justify-content:space-between; color:#526a70; font-size:13px; margin-bottom:6px; }
-    .bar-track { height:9px; border-radius:20px; background:#eaf1f1; overflow:hidden; }
-    .bar { height:100%; border-radius:20px; background:linear-gradient(90deg,#31b8a5,#0e7490); }
-    .notice { display:flex; gap:13px; margin-top:19px; padding:16px; border-radius:12px; background:#fff8e7; border:1px solid #f3dfaa; }
-    .notice .ico { font-size:22px; } .notice strong { display:block; font-size:14px; } .notice p { margin:4px 0 0; color:#866a32; font-size:13px; line-height:1.5; }
-    .beds-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:15px; }
-    .filters { display:flex; gap:9px; flex-wrap:wrap; margin-bottom:17px; }
-    .field, .search { border:1px solid var(--line); background:white; border-radius:9px; color:var(--ink); padding:10px 12px; min-width:130px; outline:0; }
-    .field:focus, .search:focus { border-color:#5db6bd; box-shadow:0 0 0 3px #d9f1f1; }
-    .rooms { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
-    .room-card { border:1px solid var(--line); border-radius:12px; padding:15px; background:#fcfefe; }
-    .room-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:11px; } .room-title strong { font-size:16px; } .room-title span { color:var(--muted); font-size:12px; }
-    .bed-list { display:grid; gap:8px; }
-    .bed { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 10px; border-radius:9px; background:#f3f8f7; }
-    .bed-main { display:flex; align-items:center; gap:9px; min-width:0; } .bed-no { color:var(--teal); font-weight:800; font-size:12px; } .bed-name { font-weight:700; font-size:13px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    .bed-empty { color:#90a3a7; font-size:13px; }
-    .table-wrap { overflow:auto; } table { border-collapse:collapse; width:100%; min-width:740px; } th,td { text-align:left; padding:13px 12px; border-bottom:1px solid #edf2f2; } th { color:var(--muted); font-size:12px; font-weight:700; } td { font-size:14px; } tbody tr:hover { background:#fbfdfd; }
-    .import-box { display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-top:15px; } .drop { border:1.5px dashed #8ec7c5; border-radius:13px; min-height:175px; display:grid; place-items:center; text-align:center; padding:20px; background:#f5fcfa; } .drop .big { font-size:31px; } .drop p { margin:8px 0 12px; color:var(--muted); font-size:13px; }
-    .steps { display:grid; gap:10px; } .step { display:flex; gap:11px; align-items:flex-start; } .step-num { flex:0 0 27px; height:27px; display:grid; place-items:center; background:#dff3ee; color:#117a70; border-radius:50%; font-weight:800; font-size:13px; } .step strong { font-size:14px; } .step p { margin:3px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
-    .calc { display:grid; grid-template-columns:1fr 1fr; gap:15px; } .calc-card { background:#f4fbf9; border-radius:12px; padding:16px; } .calc-card .small { color:var(--muted); font-size:12px; } .calc-card .money { font-size:27px; font-weight:800; margin-top:5px; } .calc-line { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #deeeea; font-size:13px; } .calc-line:last-child { border:0; font-weight:800; }
-    .checkin-grid { display:grid; grid-template-columns:1fr 1fr; gap:19px; } .reader-card { min-height:375px; } .reader-status { display:flex; align-items:center; gap:8px; padding:11px 13px; background:#e7f8f0; color:#167451; border-radius:9px; font-size:13px; margin-bottom:18px; } .reader-status i { width:8px; height:8px; border-radius:50%; background:#22a36f; box-shadow:0 0 0 4px #c9edda; } .input-label { display:block; color:var(--muted); font-size:12px; font-weight:750; margin:0 0 7px; } .input-row { display:flex; gap:8px; } .input-row .field { flex:1; min-width:0; } .lookup-result { margin-top:16px; border:1px solid #cbe7e1; background:#f4fbf9; border-radius:12px; padding:14px; display:none; } .lookup-result.show { display:block; animation:fade .2s ease; } .student-line { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; } .student-line strong { font-size:17px; } .student-line span { color:var(--muted); font-size:12px; } .student-meta { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:14px; } .student-meta div { background:#fff; border-radius:8px; padding:9px; } .student-meta small { display:block; color:var(--muted); font-size:11px; } .student-meta b { display:block; margin-top:3px; font-size:13px; } .qr-box { display:grid; grid-template-columns:116px 1fr; gap:16px; align-items:center; padding:16px; background:#f7fbfc; border:1px solid var(--line); border-radius:12px; } .fake-qr { width:116px; height:116px; border-radius:8px; background-color:#fff; background-image:linear-gradient(90deg,#123b43 10%,transparent 10% 20%,#123b43 20% 28%,transparent 28% 39%,#123b43 39% 47%,transparent 47% 55%,#123b43 55% 68%,transparent 68% 78%,#123b43 78% 90%,transparent 90%),linear-gradient(#123b43 10%,transparent 10% 20%,#123b43 20% 29%,transparent 29% 39%,#123b43 39% 47%,transparent 47% 56%,#123b43 56% 68%,transparent 68% 79%,#123b43 79% 91%,transparent 91%); border:9px solid white; box-shadow:inset 0 0 0 2px #d8e5e6; } .qr-box h3 { margin:0 0 5px; font-size:15px; } .qr-box p { margin:0; color:var(--muted); font-size:12px; line-height:1.5; } .credential { margin-top:15px; } .flow-strip { display:flex; flex-wrap:wrap; gap:8px; margin:15px 0 0; } .flow-step { padding:6px 9px; border-radius:999px; background:#eef4f4; color:#71868a; font-size:12px; } .flow-step.done { background:#dff4ec; color:#167451; } .flow-step.current { background:#d9f0f3; color:var(--teal-deep); font-weight:800; }
-    .toast { position:fixed; right:24px; bottom:24px; background:#123b43; color:#fff; padding:13px 17px; border-radius:10px; box-shadow:var(--shadow); transform:translateY(20px); opacity:0; pointer-events:none; transition:.25s; font-size:14px; } .toast.show { opacity:1; transform:none; }
-    @media (max-width:1050px) { .app { grid-template-columns:205px 1fr; } main { padding:25px; } .rooms { grid-template-columns:repeat(2,1fr); } }
-    @media (max-width:760px) { .app { display:block; } aside { position:sticky; top:0; z-index:5; padding:13px 14px; gap:12px; } .brand { padding:0 4px; } .brand span { display:none; } nav { display:flex; overflow:auto; gap:5px; padding-bottom:2px; } .nav-label, .side-foot { display:none; } .nav-btn { width:auto; flex:0 0 auto; padding:9px 11px; font-size:13px; } .nav-btn .ico { font-size:16px; width:auto; } main { padding:22px 15px 35px; } .topbar { display:block; } .actions { justify-content:flex-start; margin-top:16px; } h1 { font-size:25px; } .stats { grid-template-columns:repeat(2,1fr); gap:10px; } .stat { padding:15px; } .stat .num { font-size:26px; } .grid-two, .import-box, .calc { grid-template-columns:1fr; } .rooms { grid-template-columns:1fr; } .panel { padding:16px; } .search { width:100%; } }
-  </style>
-</head>
-<body>
-  <div class="app">
-    <aside>
-      <div class="brand"><div class="brand-mark">⌂</div><div><strong>學七舍營運台</strong><span>Residence Operations</span></div></div>
-      <div><div class="nav-label">工作區</div><nav>
-        <button class="nav-btn active" data-view="overview"><span class="ico">◫</span>總覽</button>
-        <button class="nav-btn" data-view="checkin"><span class="ico">✓</span>入住 Check-in</button>
-        <button class="nav-btn" data-view="beds"><span class="ico">▦</span>房間與床位</button>
-        <button class="nav-btn" data-view="students"><span class="ico">♙</span>學生資料</button>
-        <button class="nav-btn" data-view="moveout"><span class="ico">↗</span>退宿與電費</button>
-      </nav></div>
-      <div class="side-foot">資料同步正常<br><span>最後更新：今天 09:42</span></div>
-    </aside>
-    <main>
-      <section id="overview" class="view active">
-        <div class="topbar"><div><div class="eyebrow">2026 秋季學期</div><h1>早安，住宿管理室</h1><p class="sub">掌握入住、退宿與床位狀態。</p></div><div class="actions"><button class="btn btn-plain" data-action="export">⇩ 匯出報表</button><button class="btn btn-primary" data-view-target="students">＋ 匯入學生 Excel</button></div></div>
-        <div class="stats"><div class="stat"><div class="label">目前入住</div><div class="num blue">842</div><div class="hint">共 960 個床位</div></div><div class="stat"><div class="label">今日待入住</div><div class="num amber">38</div><div class="hint">已完成資料 31 人</div></div><div class="stat"><div class="label">待處理退宿</div><div class="num red">12</div><div class="hint">其中 4 件待驗房</div></div><div class="stat"><div class="label">本月電費</div><div class="num green">$42,680</div><div class="hint">較上月少 8.4%</div></div></div>
-        <div class="grid-two"><div class="panel"><div class="panel-head"><div><h2>最近活動</h2><p class="panel-note">即時入住與退宿紀錄</p></div><button class="link" data-view-target="moveout">查看全部 →</button></div><div class="activity"><div class="activity-row"><div class="avatar">林</div><div><strong>林雨晴完成入住</strong><p>A-203 · 2號床 · QR 報到</p></div><span class="time">09:42</span></div><div class="activity-row"><div class="avatar">陳</div><div><strong>陳冠宇提交退宿</strong><p>B-105 · 4號床 · 待驗房</p></div><span class="time">09:18</span></div><div class="activity-row"><div class="avatar">吳</div><div><strong>吳佩珊完成電費結算</strong><p>A-118 · 退宿電表 8,430 度</p></div><span class="time">08:56</span></div><div class="activity-row"><div class="avatar">系</div><div><strong>學生資料匯入完成</strong><p>秋季入住名單 · 128 筆</p></div><span class="time">昨天</span></div></div></div>
-        <div class="panel"><div class="panel-head"><div><h2>各樓層入住率</h2><p class="panel-note">學七舍目前 84.2% 使用中</p></div><span class="badge green">正常</span></div><div class="bar-group"><div><div class="bar-label"><span>2 樓・性別友善</span><strong>92%</strong></div><div class="bar-track"><div class="bar" style="width:92%"></div></div></div><div><div class="bar-label"><span>3–6 樓</span><strong>86%</strong></div><div class="bar-track"><div class="bar" style="width:86%"></div></div></div><div><div class="bar-label"><span>7–9 樓</span><strong>84%</strong></div><div class="bar-track"><div class="bar" style="width:84%"></div></div></div><div><div class="bar-label"><span>10–12 樓</span><strong>89%</strong></div><div class="bar-track"><div class="bar" style="width:89%"></div></div></div></div></div></div>
-        <div class="notice"><div class="ico">⚡</div><div><strong>有 12 筆退宿案件等待處理</strong><p>其中 4 位學生已到達退宿日期，完成驗房後床位才能重新分配。</p></div><button class="link" data-view-target="moveout">前往處理 →</button></div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#102a43" />
+    <meta name="description" content="水電材料庫存與倉位管理" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>庫存管家｜水電材料管理</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">水電材料庫存</p>
+          <h1>庫存管家</h1>
+        </div>
+        <button class="icon-button" id="notifyButton" aria-label="通知設定">⌁</button>
+      </header>
+
+      <section class="scan-card">
+        <div class="scan-icon">▦</div>
+        <div class="scan-copy">
+          <strong>掃描倉庫 QR Code</strong>
+          <span>快速開啟指定樓層的材料清單</span>
+        </div>
+        <button class="primary-button compact" id="scanButton">開始掃描</button>
       </section>
-      <section id="checkin" class="view"><div class="topbar"><div><div class="eyebrow">學七舍・現場核驗</div><h1>入住 Check-in</h1><p class="sub">刷學生證或核對遠端預約憑證，完成入住與床位啟用。</p></div><div class="actions"><button class="btn btn-plain" data-action="export">⇩ 匯出今日名單</button><button class="btn btn-primary" data-action="toast">⚙ 刷卡機設定</button></div></div><div class="stats"><div class="stat"><div class="label">今日預約</div><div class="num blue">38</div><div class="hint">預約入住時段</div></div><div class="stat"><div class="label">已完成 Check-in</div><div class="num green">31</div><div class="hint">完成率 81.6%</div></div><div class="stat"><div class="label">等待核對</div><div class="num amber">5</div><div class="hint">刷卡或憑證待確認</div></div><div class="stat"><div class="label">例外處理</div><div class="num red">2</div><div class="hint">需要人工查詢</div></div></div><div class="checkin-grid"><div class="panel reader-card"><div class="panel-head"><div><h2>刷學生證 Check-in</h2><p class="panel-note">由刷卡機讀取學生證內碼</p></div><span class="badge green">刷卡機已連線</span></div><div class="reader-status"><i></i><span>Card Reader 01・USB 連線正常</span></div><label class="input-label" for="cardCode">學生證內碼</label><div class="input-row"><input class="field" id="cardCode" placeholder="請刷卡，或輸入內碼測試" value="7A-2026-0148" /><button class="btn btn-primary" id="lookupCard">查詢</button></div><div class="lookup-result show" id="cardResult"><div class="student-line"><div><strong id="cardName">王小明</strong><span id="cardStudentNo">S001</span></div><span class="badge green">資料相符</span></div><div class="student-meta"><div><small>分配房間</small><b id="cardRoom">F70201</b></div><div><small>床位</small><b id="cardBed">1 號床</b></div><div><small>入住時段</small><b id="cardSlot">09:00–10:00</b></div></div><button class="btn btn-primary" style="width:100%;margin-top:14px" id="completeCardCheckin">確認入住並啟用床位</button></div></div><div class="panel reader-card"><div class="panel-head"><div><h2>遠端預約入住</h2><p class="panel-note">學生先預約，到現場掃 QR Code 後核對憑證</p></div><span class="badge blue">電子憑證</span></div><div class="qr-box"><div class="fake-qr" aria-label="預約入住 QR Code"></div><div><h3>現場掃描 QR Code</h3><p>學生使用手機掃描現場 QR Code，開啟入住憑證核對頁。</p><div class="flow-strip"><span class="flow-step done">① 遠端預約</span><span class="flow-step current">② 現場核對</span><span class="flow-step">③ 啟用床位</span></div></div></div><div class="credential"><label class="input-label" for="credentialCode">電子憑證</label><div class="input-row"><input class="field" id="credentialCode" placeholder="例如 SCH-6F2K-9M8P" value="SCH-6F2K-9M8P" /><button class="btn btn-soft" id="verifyCredential">核對</button></div></div><div class="lookup-result show" id="credentialResult"><div class="student-line"><div><strong id="credentialName">陳怡君</strong><span id="credentialStudentNo">S018</span></div><span class="badge green">預約有效</span></div><div class="student-meta"><div><small>分配房間</small><b id="credentialRoom">70401</b></div><div><small>床位</small><b id="credentialBed">2 號床</b></div><div><small>預約時間</small><b id="credentialSlot">10:00–11:00</b></div></div><button class="btn btn-primary" style="width:100%;margin-top:14px" id="completeCredentialCheckin">確認入住並啟用床位</button></div></div></div><div class="panel" style="margin-top:19px"><div class="panel-head"><div><h2>今日入住佇列</h2><p class="panel-note">刷卡機與遠端預約會寫入同一筆入住紀錄</p></div><button class="link" data-action="toast">查看完整紀錄 →</button></div><div class="table-wrap"><table><thead><tr><th>學生</th><th>來源</th><th>內碼／憑證</th><th>房間床位</th><th>預約時段</th><th>狀態</th></tr></thead><tbody><tr><td><strong>林雨晴</strong><br><small>S014</small></td><td>刷學生證</td><td>7A-2026-0152</td><td>70302 · 1號</td><td>09:00–10:00</td><td><span class="badge green">已入住</span></td></tr><tr><td><strong>陳怡君</strong><br><small>S018</small></td><td>QR＋電子憑證</td><td>SCH-6F2K-9M8P</td><td>70401 · 2號</td><td>10:00–11:00</td><td><span class="badge amber">待現場核對</span></td></tr><tr><td><strong>王柏翔</strong><br><small>S022</small></td><td>刷學生證</td><td>7A-2026-0188</td><td>F70208 · 3號</td><td>11:00–12:00</td><td><span class="badge red">尚未到場</span></td></tr></tbody></table></div></div></section>
-      <section id="beds" class="view"><div class="topbar"><div><div class="eyebrow">學七舍・配置與查詢</div><h1>房間與床位</h1><p class="sub">每間房 4 個床位，保留完整入住歷史。</p></div><div class="actions"><button class="btn btn-plain" data-action="export">⇩ 匯出床位</button><button class="btn btn-primary" data-action="toast">＋ 新增房間</button></div></div><div class="panel"><div class="beds-header"><div><h2>學七舍目前床位配置</h2><p class="panel-note">共 250 間房 · 1,000 個床位</p></div><div class="filters"><select class="field" id="floorFilter"><option value="all">全部樓層</option><option value="2">2 樓・性別友善</option><option value="3">3 樓</option><option value="4">4 樓</option><option value="5">5 樓</option><option value="6">6 樓</option><option value="7">7 樓</option><option value="8">8 樓</option><option value="9">9 樓</option><option value="10">10 樓</option><option value="11">11 樓</option><option value="12">12 樓</option></select><select class="field" id="bedStatusFilter"><option value="all">全部狀態</option><option value="occupied">已入住</option><option value="empty">空床</option></select></div></div><div class="rooms" id="rooms"></div></div></section>
-      <section id="students" class="view"><div class="topbar"><div><div class="eyebrow">批次資料</div><h1>學生資料</h1><p class="sub">匯入 Excel 後先檢查，再寫入住宿名冊。</p></div><div class="actions"><button class="btn btn-plain" data-action="template">下載 Excel 範本</button><button class="btn btn-primary" data-action="file">⇧ 選擇 Excel 檔</button><input id="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden /></div></div><div class="panel"><div class="import-box"><div class="drop"><div><div class="big">▤</div><strong>拖曳 Excel 到這裡</strong><p>支援 .xlsx、.xls、.csv<br>系統會先檢查重複學號與床位衝突</p><button class="btn btn-soft" data-action="file">選擇檔案</button></div></div><div class="steps"><div class="step"><div class="step-num">1</div><div><strong>上傳名冊</strong><p>支援批次建立學生、房間與床位分配。</p></div></div><div class="step"><div class="step-num">2</div><div><strong>檢查錯誤</strong><p>自動找出學號重複、房號不存在、床位衝突。</p></div></div><div class="step"><div class="step-num">3</div><div><strong>確認匯入</strong><p>確認後才寫入資料庫，原有入住歷史不會被覆蓋。</p></div></div></div></div></div><div class="panel" style="margin-top:19px"><div class="panel-head"><div><h2>最近匯入紀錄</h2><p class="panel-note">保留操作人員與批次結果</p></div><span class="badge green">同步正常</span></div><div class="table-wrap"><table><thead><tr><th>批次</th><th>檔案</th><th>資料筆數</th><th>結果</th><th>操作人員</th><th>時間</th></tr></thead><tbody><tr><td>2026-FALL-03</td><td>秋季入住名單.xlsx</td><td>128</td><td><span class="badge green">成功</span></td><td>王老師</td><td>09/26 17:30</td></tr><tr><td>2026-FALL-02</td><td>交換生名單.xlsx</td><td>46</td><td><span class="badge amber">2 筆待修正</span></td><td>林助理</td><td>09/25 14:08</td></tr></tbody></table></div></div></section>
-      <section id="moveout" class="view"><div class="topbar"><div><div class="eyebrow">結算與補位</div><h1>退宿與電費</h1><p class="sub">退宿、驗房、抄表與床位釋出，一次完成。</p></div><div class="actions"><button class="btn btn-plain" data-action="export">⇩ 匯出結算</button><button class="btn btn-primary" data-action="toast">＋ 建立退宿案件</button></div></div><div class="grid-two"><div class="panel"><div class="panel-head"><div><h2>待處理退宿</h2><p class="panel-note">完成驗房後才可補進新同學</p></div><select class="field"><option>全部狀態</option><option>待驗房</option><option>待抄表</option><option>可分配</option></select></div><div class="table-wrap"><table><thead><tr><th>學生</th><th>床位</th><th>退宿日</th><th>電表</th><th>狀態</th><th></th></tr></thead><tbody><tr><td><strong>陳冠宇</strong><br><small>S002</small></td><td>B-105 · 4號</td><td>今天</td><td>待抄表</td><td><span class="badge amber">待驗房</span></td><td><button class="link" data-action="toast">處理</button></td></tr><tr><td><strong>吳佩珊</strong><br><small>S014</small></td><td>A-118 · 2號</td><td>09/26</td><td>8,430 度</td><td><span class="badge green">可分配</span></td><td><button class="link" data-action="toast">查看</button></td></tr><tr><td><strong>黃子庭</strong><br><small>S031</small></td><td>C-204 · 1號</td><td>09/28</td><td>待抄表</td><td><span class="badge red">待退宿</span></td><td><button class="link" data-action="toast">處理</button></td></tr></tbody></table></div></div><div class="panel"><div class="panel-head"><div><h2>電費試算</h2><p class="panel-note">目前選取：吳佩珊 · A-118 2號床</p></div><span class="badge green">已完成</span></div><div class="calc"><div class="calc-card"><div class="small">個人應繳電費</div><div class="money green">$344</div><div class="small">依住宿天數比例分攤</div></div><div class="calc-card"><div class="small">使用電量</div><div class="money blue">430 度</div><div class="small">電價 $3.20／度</div></div></div><div style="margin-top:14px"><div class="calc-line"><span>入住電表</span><strong>8,000 度</strong></div><div class="calc-line"><span>退宿電表</span><strong>8,430 度</strong></div><div class="calc-line"><span>房間總電費</span><strong>$1,376</strong></div><div class="calc-line"><span>個人分攤</span><strong class="green">25% · $344</strong></div></div><button class="btn btn-primary" style="width:100%; margin-top:16px" data-action="toast">確認結算並釋出床位</button></div></div></section>
+
+      <section class="summary-grid" aria-label="庫存摘要">
+        <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
+        <article class="summary-card warning"><span>低庫存</span><strong id="lowStockCount">0</strong><small>項待補</small></article>
+        <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
+      </section>
+
+      <section class="workspace-panel">
+        <div class="section-heading">
+          <div><p class="eyebrow">快速操作</p><h2>材料清單</h2></div>
+          <div class="heading-actions">
+            <button class="primary-button compact" id="newMaterialButton">＋ 新增材料</button>
+            <button class="text-button" id="statsButton">查看月統計 →</button>
+          </div>
+        </div>
+
+        <div class="filters">
+          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋材料名稱或規格" /></label>
+          <div class="location-filter-group">
+            <label class="select-box"><span>位置</span><select id="locationFilter"></select></label>
+            <button class="add-location-button" type="button" id="addLocationFromFilter">＋ 新增位置</button>
+          </div>
+        </div>
+
+        <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
+        <div class="material-list" id="materialList"></div>
+      </section>
+
+      <section class="stats-panel hidden" id="statsPanel">
+        <div class="section-heading"><div><p class="eyebrow">使用分析</p><h2>本月用量統計</h2></div><button class="text-button" id="closeStats">收合</button></div>
+        <div class="chart" id="usageChart" aria-label="本月材料使用量圖表"></div>
+        <div class="report-row"><span>領用最多</span><strong id="topUsed">—</strong></div>
+        <div class="report-row"><span>本月補貨</span><strong id="monthlyRestock">0 件</strong></div>
+      </section>
+
+      <footer class="bottom-note">資料會保存在此裝置，正式版可同步多人使用並串接 LINE 通知。</footer>
     </main>
-  </div>
-  <div class="toast" id="toast">操作已完成</div>
-  <script>
-    const floorSpecs = [{floor:2,count:22,prefix:'F702'},{floor:3,count:30,prefix:'703'},{floor:4,count:30,prefix:'704'},{floor:5,count:30,prefix:'705'},{floor:6,count:30,prefix:'706'},{floor:7,count:22,prefix:'707'},{floor:8,count:22,prefix:'708'},{floor:9,count:22,prefix:'709'},{floor:10,count:14,prefix:'710'},{floor:11,count:14,prefix:'711'},{floor:12,count:14,prefix:'712'}];
-    const sampleStudents = {'F70201':['王小明','林佳蓉','—','趙子豪'],'F70202':['張雅婷','—','陳威廷','—'],'70301':['李承翰','黃郁雯','周宜庭','許家豪'],'70302':['林雨晴','—','楊博宇','—'],'70401':['蔡佩珊','陳冠宇','—','謝昀庭']};
-    const rooms = floorSpecs.flatMap(({floor,count,prefix})=>Array.from({length:count},(_,i)=>{const room=`${prefix}${String(i+1).padStart(2,'0')}`; return {floor,room,beds:sampleStudents[room] || ['—','—','—','—']};}));
-    const statusFor = n => n === '—' ? '空床' : '已入住';
-    const renderRooms = () => { const floor=document.getElementById('floorFilter').value; const status=document.getElementById('bedStatusFilter').value; const filtered=rooms.filter(r=>(floor==='all'||String(r.floor)===floor)&&(status==='all'||(status==='occupied'&&r.beds.some(n=>n!=='—'))||(status==='empty'&&r.beds.every(n=>n==='—')))); document.getElementById('rooms').innerHTML = filtered.map(({room,beds}) => `<div class="room-card"><div class="room-title"><strong>${room}</strong><span>${beds.filter(x=>x !== '—').length}/4 已入住</span></div><div class="bed-list">${beds.map((name,i)=>`<div class="bed"><div class="bed-main"><span class="bed-no">${i+1}號</span>${name === '—' ? '<span class="bed-empty">可分配</span>' : `<span class="bed-name">${name}</span>`}</div><span class="badge ${name === '—' ? 'amber' : 'green'}">${statusFor(name)}</span></div>`).join('')}</div></div>`).join('') || '<div class="panel-note">沒有符合條件的房間。</div>'; };
-    renderRooms();
-    document.getElementById('floorFilter').addEventListener('change',renderRooms); document.getElementById('bedStatusFilter').addEventListener('change',renderRooms);
-    const switchView = id => { document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id === id)); document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === id)); window.scrollTo({top:0,behavior:'smooth'}); };
-    document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
-    document.querySelectorAll('[data-view-target]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.viewTarget)));
-    const toast = msg => { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
-    document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{ const a=b.dataset.action; if(a==='file') document.getElementById('fileInput').click(); else if(a==='template') toast('Excel 範本下載已準備'); else if(a==='export') toast('報表匯出已準備'); else toast('示範操作已完成'); }));
-    document.getElementById('fileInput').addEventListener('change', e=>{ if(e.target.files[0]) toast(`已選擇：${e.target.files[0].name}，等待檢查`); });
-    const cardStudents = {'7A-2026-0148':{name:'王小明',no:'S001',room:'F70201',bed:'1 號床',slot:'09:00–10:00'},'7A-2026-0152':{name:'林雨晴',no:'S014',room:'70302',bed:'1 號床',slot:'09:00–10:00'}};
-    const credentialStudents = {'SCH-6F2K-9M8P':{name:'陳怡君',no:'S018',room:'70401',bed:'2 號床',slot:'10:00–11:00'}};
-    const fillCheckinResult = (data, prefix, resultId) => { document.getElementById(`${prefix}Name`).textContent=data.name; document.getElementById(`${prefix}StudentNo`).textContent=data.no; document.getElementById(`${prefix}Room`).textContent=data.room; document.getElementById(`${prefix}Bed`).textContent=data.bed; document.getElementById(`${prefix}Slot`).textContent=data.slot; document.getElementById(resultId).classList.add('show'); };
-    document.getElementById('lookupCard').addEventListener('click',()=>{ const code=document.getElementById('cardCode').value.trim().toUpperCase(); const data=cardStudents[code]; if(data){ fillCheckinResult(data,'card','cardResult'); toast('學生資料相符，可完成入住'); } else { document.getElementById('cardResult').classList.remove('show'); toast('查無此學生證內碼，請轉人工查詢'); } });
-    document.getElementById('verifyCredential').addEventListener('click',()=>{ const code=document.getElementById('credentialCode').value.trim().toUpperCase(); const data=credentialStudents[code]; if(data){ fillCheckinResult(data,'credential','credentialResult'); toast('電子憑證有效，可完成入住'); } else { document.getElementById('credentialResult').classList.remove('show'); toast('電子憑證無效或已過期'); } });
-    document.getElementById('completeCardCheckin').addEventListener('click',()=>toast('刷卡入住完成，已寫入入住紀錄並啟用床位'));
-    document.getElementById('completeCredentialCheckin').addEventListener('click',()=>toast('遠端預約入住完成，已寫入入住紀錄並啟用床位'));
-  </script>
-</body>
+
+    <div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal-card">
+        <button class="close-button" data-close-modal aria-label="關閉">×</button>
+        <p class="eyebrow" id="modalEyebrow">庫存異動</p>
+        <h2 id="modalTitle">調整庫存</h2>
+        <p class="modal-location" id="modalLocation"></p>
+        <div class="stepper"><button id="decreaseStep">−</button><strong id="stepValue">1</strong><button id="increaseStep">＋</button></div>
+        <label class="field-label">異動原因<select id="reasonSelect"><option>工地使用</option><option>入庫補貨</option><option>退料</option><option>損耗</option><option>盤點調整</option></select></label>
+        <label class="field-label">備註（選填）<input id="noteInput" placeholder="例如：工地 A 使用" /></label>
+        <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="materialModal" role="dialog" aria-modal="true" aria-labelledby="materialModalTitle">
+      <div class="modal-backdrop" data-close-material-modal></div>
+      <div class="modal-card material-modal-card">
+        <button class="close-button" type="button" data-close-material-modal aria-label="關閉">×</button>
+        <p class="eyebrow">材料資料</p>
+        <h2 id="materialModalTitle">新增材料</h2>
+        <form id="materialForm">
+          <label class="field-label" for="materialName">材料名稱 <span class="required-mark">＊</span>
+            <input id="materialName" name="name" required maxlength="100" placeholder="例如：PVC 管 2 吋" autocomplete="off" />
+          </label>
+          <div class="field-grid">
+            <label class="field-label" for="materialCategory">分類／規格 <span class="required-mark">＊</span>
+              <input id="materialCategory" name="category" required maxlength="80" placeholder="例如：給水管材" />
+            </label>
+            <label class="field-label" for="materialUnit">單位 <span class="required-mark">＊</span>
+              <input id="materialUnit" name="unit" required maxlength="20" placeholder="例如：支、個、捲" />
+            </label>
+          </div>
+          <div class="field-grid" id="initialStockRow">
+            <label class="field-label" for="materialStock">初始庫存 <span class="required-mark">＊</span>
+              <input id="materialStock" name="stock" type="number" inputmode="numeric" required min="0" step="1" value="0" />
+            </label>
+            <label class="field-label" for="materialAlert">警戒值 <span class="required-mark">＊</span>
+              <input id="materialAlert" name="alert" type="number" inputmode="numeric" required min="0" step="1" value="5" />
+            </label>
+          </div>
+          <label class="field-label alert-only hidden" for="materialAlertEdit">警戒值 <span class="required-mark">＊</span>
+            <input id="materialAlertEdit" name="alertEdit" type="number" inputmode="numeric" min="0" step="1" value="5" />
+          </label>
+          <label class="field-label" for="materialLocation">倉庫位置 <span class="required-mark">＊</span>
+            <select id="materialLocation" name="location" required></select>
+          </label>
+          <button class="add-location-button form-location-button" type="button" id="addLocationFromForm">＋ 新增位置選項</button>
+          <label class="field-label" for="materialDetail">詳細位置（選填）
+            <input id="materialDetail" name="detail" maxlength="100" placeholder="例如：A-03 貨架／第 2 層" />
+          </label>
+          <p class="form-hint" id="materialFormHint">庫存與警戒值請填入 0 或正整數。</p>
+          <div class="modal-actions"><button class="secondary-button" type="button" data-close-material-modal>取消</button><button class="primary-button" type="submit" id="saveMaterialButton">儲存材料</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="locationModal" role="dialog" aria-modal="true" aria-labelledby="locationModalTitle">
+      <div class="modal-backdrop" data-close-location-modal></div>
+      <div class="modal-card location-modal-card">
+        <button class="close-button" type="button" data-close-location-modal aria-label="關閉">×</button>
+        <p class="eyebrow">倉庫位置</p>
+        <h2 id="locationModalTitle">新增位置</h2>
+        <form id="locationForm">
+          <label class="field-label" for="newLocationName">位置名稱 <span class="required-mark">＊</span>
+            <input id="newLocationName" required maxlength="40" placeholder="例如：地下 1 樓、13樓西" autocomplete="off" />
+          </label>
+          <div class="modal-actions"><button class="secondary-button" type="button" data-close-location-modal>取消</button><button class="primary-button" type="submit">儲存位置</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="toast hidden" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
 </html>
