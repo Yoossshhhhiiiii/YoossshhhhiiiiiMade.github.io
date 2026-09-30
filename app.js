@@ -5,8 +5,50 @@ const seed = [
   { id: 3, name: '不鏽鋼水龍頭', spec: '衛浴設備／個', stock: 24, alert: 6, location: '8樓西', detail: 'C-02貨架／第3層' },
   { id: 4, name: '無熔絲開關 20A', spec: '電氣材料／個', stock: 12, alert: 5, location: '7樓東', detail: 'D-05櫃／第2層' },
   { id: 5, name: 'PVC 彎頭 2 吋', spec: '管件／個', stock: 4, alert: 8, location: '12樓西', detail: 'A-03貨架／第3層' },
-  { id: 6, name: '止水帶', spec: '施工耗材／卷', stock: 18, alert: 5, location: '1樓', detail: '入口工具櫃／左側' }
+  { id: 6, name: '止水帶', spec: '施工耗材／卷', stock: 2, alert: 5, location: '1樓', detail: '入口工具櫃／左側' }
 ];
+
+// 照片清單未標示的單位、分類與警戒值，保持待設定，不自行推定。
+const firstFloorImport = [
+  ['盲蓋', 100],
+  ['14吋排壁扇', 30],
+  ['馬桶水箱配件', 20],
+  ['浴室排風扇', 20],
+  ['蓮蓬頭', 100],
+  ['單切開關', 100],
+  ['5mm隔板粒', 100],
+  ['PVC天花板', 200],
+  ['拉桿落水頭延伸管', 20],
+  ['快乾水泥', 10],
+  ['華司', 500],
+  ['十字螺絲', 500],
+  ['螺母', 500],
+  ['單孔三插座組', 42],
+  ['雙孔三插座組', 41],
+  ['單切開關組', 20],
+  ['專業工具組合工具箱', 1],
+  ['T8燈腳座（含線）', 30],
+  ['白光T8 2尺燈管', 100],
+  ['變壓器', 30],
+  ['AB膠', 10],
+  ['浴室用混水龍頭', 18],
+  ['附鐵架燈頭', 24],
+  ['4分不鏽鋼自攻螺絲', 100, '支'],
+  ['1英吋不鏽鋼自攻螺絲', 110, '支'],
+  ['1.5英吋不鏽鋼自攻螺絲', 100, '支'],
+  ['圓形喇叭鎖', 50],
+  ['浴室喇叭鎖', 45],
+  ['4分P管組', 10],
+  ['LED T8 4尺', 28],
+  ['LED T5 2尺連結燈', 31],
+  ['LED T5 2尺連結燈（含開關）', 37],
+  ['LED T5 4尺20W支架燈', 29],
+  ['電鍋', 5],
+  ['電磁爐', 6],
+  ['烤箱', 8],
+  ['微波爐', 8]
+];
+const firstFloorImportKey = 'inventory-first-floor-photo-import-2026-09-29-v1';
 
 const storedMaterials = localStorage.getItem('inventory-materials');
 let materials = storedMaterials ? JSON.parse(storedMaterials) : seed;
@@ -23,12 +65,34 @@ function save() {
   localStorage.setItem('inventory-transactions', JSON.stringify(transactions));
 }
 
+function importFirstFloorMaterials() {
+  if (localStorage.getItem(firstFloorImportKey)) return;
+
+  const stopTape = materials.find(item => item.name === '止水帶' && item.location === '1樓');
+  let nextId = Math.max(0, ...materials.map(item => item.id)) + 1;
+  if (stopTape) stopTape.stock = 2;
+  else materials.push({ id: nextId++, name: '止水帶', spec: '施工耗材／卷', stock: 2, alert: 5, location: '1樓', detail: '' });
+
+  for (const [name, stock, unit = ''] of firstFloorImport) {
+    if (materials.some(item => item.name.trim().toLowerCase() === name.toLowerCase() && item.location === '1樓')) continue;
+    materials.push({ id: nextId++, name, spec: `／${unit}`, stock, alert: null, location: '1樓', detail: '' });
+  }
+  save();
+  localStorage.setItem(firstFloorImportKey, 'done');
+}
+
+importFirstFloorMaterials();
+
 function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
 
-function isLow(item) { return item.stock <= item.alert; }
-function unitOf(item) { return item.spec.split('／')[1] || '件'; }
+function isLow(item) { return item.alert !== null && item.alert !== undefined && item.stock <= item.alert; }
+function unitOf(item) { return item.spec.split('／')[1] || ''; }
+function displaySpec(item) {
+  const [category, unit] = item.spec.split('／');
+  return `${category || '分類待設定'}／${unit || '單位待設定'}`;
+}
 function formatNumber(number) { return new Intl.NumberFormat('zh-TW').format(number); }
 function localMonth(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
 
@@ -65,7 +129,7 @@ function render() {
     <article class="material-card ${isLow(item) ? 'low' : ''}">
       <div>
         <div class="material-name">${escapeHTML(item.name)}</div>
-        <div class="material-meta">${escapeHTML(item.spec)} · ${escapeHTML(item.location)}${item.detail ? ` · ${escapeHTML(item.detail)}` : ''}</div>
+        <div class="material-meta">${escapeHTML(displaySpec(item))} · ${escapeHTML(item.location)}${item.detail ? ` · ${escapeHTML(item.detail)}` : ''}${item.alert == null ? ' · 警戒值待設定' : ''}</div>
         <div class="material-actions">
           <button class="round-button minus" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHTML(item.name)} 庫存">−</button>
           <button class="round-button" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHTML(item.name)} 庫存">＋</button>
@@ -128,10 +192,10 @@ function openMaterialForm(item = null) {
   $('materialUnit').value = item ? unitOf(item) : '';
   $('materialStock').value = item?.stock ?? 0;
   $('materialAlert').value = item?.alert ?? 5;
-  $('materialAlertEdit').value = item?.alert ?? 5;
+  $('materialAlertEdit').value = item ? item.alert ?? '' : 5;
   $('materialLocation').value = item?.location ?? '12樓西';
   $('materialDetail').value = item?.detail ?? '';
-  $('materialFormHint').textContent = item ? '庫存數量請使用材料清單上的 ＋ 或 − 調整。' : '庫存與警戒值請填入 0 或正整數。';
+  $('materialFormHint').textContent = item?.alert == null && item ? '請補上分類、單位和警戒值；庫存數量請使用 ＋ 或 − 調整。' : item ? '庫存數量請使用材料清單上的 ＋ 或 − 調整。' : '庫存與警戒值請填入 0 或正整數。';
   $('materialModal').classList.remove('hidden');
   $('materialName').focus();
 }
