@@ -58,6 +58,8 @@ let activeMaterial = null;
 let editingMaterialId = null;
 let locationReturnToMaterial = false;
 let step = 1;
+const MATERIALS_PER_PAGE = 5;
+let materialPage = 1;
 const $ = id => document.getElementById(id);
 
 function save() {
@@ -95,6 +97,51 @@ function displaySpec(item) {
 }
 function formatNumber(number) { return new Intl.NumberFormat('zh-TW').format(number); }
 function localMonth(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
+function localDateKey(date = new Date()) {
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function transactionMaterial(record) {
+  const item = materials.find(candidate => candidate.id === record.materialId);
+  return { name: record.materialName || item?.name || `材料 #${record.materialId}`, unit: record.unit ?? (item ? unitOf(item) : '') };
+}
+
+function transactionCard(record) {
+  const { name, unit } = transactionMaterial(record);
+  const date = new Date(record.time);
+  const time = Number.isNaN(date.getTime()) ? '日期不明' : new Intl.DateTimeFormat('zh-TW', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(date);
+  const adding = record.type === '增加';
+  return `
+    <article class="transaction-card">
+      <div class="transaction-main">
+        <div><span class="transaction-time">${escapeHTML(time)}</span><strong>${escapeHTML(name)}</strong></div>
+        <span class="transaction-amount ${adding ? 'added' : 'used'}">${adding ? '＋' : '−'}${formatNumber(record.amount)}${unit ? ` ${escapeHTML(unit)}` : ''}</span>
+      </div>
+      <div class="transaction-meta">異動：${adding ? '增加庫存' : '減少庫存'} · 原因：${escapeHTML(record.reason || '未填寫')}</div>
+      <div class="transaction-note">備註：${escapeHTML(record.note || '無')}</div>
+    </article>`;
+}
+
+function transactionsInRange(start, end) {
+  return transactions.filter(record => {
+    const day = localDateKey(new Date(record.time));
+    return day && day >= start && day <= end;
+  }).slice().sort((a, b) => new Date(b.time) - new Date(a.time));
+}
+
+function renderToday() {
+  const now = new Date();
+  const today = localDateKey(now);
+  const records = transactionsInRange(today, today);
+  $('todayDate').textContent = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
+  $('todaySummary').textContent = records.length ? `今天共有 ${records.length} 筆庫存異動` : '今天尚無庫存異動';
+  $('todayTransactions').innerHTML = records.length
+    ? records.map(transactionCard).join('')
+    : '<p class="activity-empty">新增或減少材料後，異動紀錄會顯示在這裡。</p>';
+}
 
 function allLocations() {
   return [...new Set([...LOCATIONS.slice(1), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean);
@@ -117,6 +164,12 @@ function render() {
     (!term || `${item.name} ${item.spec} ${item.detail || ''}`.toLowerCase().includes(term)) &&
     (location === '全部位置' || item.location === location)
   );
+  const paginated = location === '全部位置';
+  const pageCount = paginated ? Math.max(1, Math.ceil(filtered.length / MATERIALS_PER_PAGE)) : 1;
+  materialPage = Math.min(Math.max(1, materialPage), pageCount);
+  const visibleMaterials = paginated
+    ? filtered.slice((materialPage - 1) * MATERIALS_PER_PAGE, materialPage * MATERIALS_PER_PAGE)
+    : filtered;
   const month = localMonth();
   const used = transactions.filter(record => record.type === '減少' && localMonth(new Date(record.time)) === month)
     .reduce((total, record) => total + record.amount, 0);
@@ -125,7 +178,7 @@ function render() {
   $('lowStockCount').textContent = materials.filter(isLow).length;
   $('monthlyUsage').textContent = formatNumber(used);
   $('locationNote').textContent = location === '全部位置' ? '目前顯示全部倉庫位置' : `目前位置：${location}`;
-  $('materialList').innerHTML = filtered.length ? filtered.map(item => `
+  $('materialList').innerHTML = filtered.length ? visibleMaterials.map(item => `
     <article class="material-card ${isLow(item) ? 'low' : ''}">
       <div>
         <div class="material-name">${escapeHTML(item.name)}</div>
@@ -139,25 +192,61 @@ function render() {
       </div>
       <div><span class="stock-number ${isLow(item) ? 'low' : ''}">${formatNumber(item.stock)}</span><span class="stock-unit">${escapeHTML(unitOf(item))}</span></div>
     </article>`).join('') : '<div class="location-note">找不到符合條件的材料。</div>';
+  $('materialPagination').classList.toggle('hidden', !paginated || pageCount === 1);
+  $('materialPageStatus').textContent = `第 ${materialPage}／${pageCount} 頁 · 共 ${filtered.length} 項`;
+  $('previousMaterialsPage').disabled = materialPage === 1;
+  $('nextMaterialsPage').disabled = materialPage === pageCount;
+  renderToday();
   renderStats();
 }
 
+function resetMaterialPage() {
+  materialPage = 1;
+  render();
+}
+
+function changeMaterialPage(delta) {
+  materialPage += delta;
+  render();
+  $('materialList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function renderStats() {
-  const month = localMonth();
-  const usage = materials.map(item => ({
-    name: item.name,
-    amount: transactions.filter(record => record.materialId === item.id && record.type === '減少' && localMonth(new Date(record.time)) === month)
-      .reduce((total, record) => total + record.amount, 0)
-  })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const start = $('statsStartDate').value;
+  const end = $('statsEndDate').value;
+  const invalid = !start || !end || start > end;
+  $('statsRangeError').classList.toggle('hidden', !invalid);
+  const records = invalid ? [] : transactionsInRange(start, end);
+  const used = records.filter(record => record.type === '減少');
+  const restocked = records.filter(record => record.type === '增加');
+  const byMaterial = new Map();
+  for (const record of used) {
+    const material = transactionMaterial(record);
+    const entry = byMaterial.get(record.materialId) || { name: material.name, unit: material.unit, amount: 0 };
+    entry.amount += record.amount;
+    byMaterial.set(record.materialId, entry);
+  }
+  const allUsage = [...byMaterial.values()].sort((a, b) => b.amount - a.amount);
+  const usage = allUsage.slice(0, 5);
   const max = Math.max(...usage.map(item => item.amount), 1);
-  $('usageChart').innerHTML = usage.map(item => `
+  $('usageChart').classList.toggle('empty', !usage.length);
+  $('usageChart').innerHTML = usage.length ? usage.map(item => `
     <div class="chart-item"><span>${item.amount}</span>
       <div class="bar" style="height:${Math.max(8, item.amount / max * 105)}px"></div>
       <span title="${escapeHTML(item.name)}">${escapeHTML(item.name.slice(0, 5))}</span>
-    </div>`).join('');
-  $('topUsed').textContent = usage[0]?.amount ? `${usage[0].name}（${usage[0].amount}）` : '尚無領用紀錄';
-  $('monthlyRestock').textContent = `${transactions.filter(record => record.type === '增加' && localMonth(new Date(record.time)) === month)
-    .reduce((total, record) => total + record.amount, 0)} 件`;
+    </div>`).join('') : '<p class="activity-empty">此區間尚無使用紀錄。</p>';
+  $('usageBreakdown').innerHTML = allUsage.length ? allUsage.map(item => `
+    <div class="usage-total"><span>${escapeHTML(item.name)}</span><strong>${formatNumber(item.amount)}${item.unit ? ` ${escapeHTML(item.unit)}` : ''}</strong></div>
+  `).join('') : '<p class="activity-empty">此區間尚無材料使用。</p>';
+  $('topUsed').textContent = usage[0]
+    ? `${usage[0].name}（${formatNumber(usage[0].amount)}${usage[0].unit ? ` ${usage[0].unit}` : ''}）`
+    : '尚無使用紀錄';
+  $('rangeUsage').textContent = `${used.length} 筆`;
+  $('rangeRestock').textContent = `${restocked.length} 筆`;
+  $('rangeCount').textContent = `（${records.length} 筆）`;
+  $('rangeTransactions').innerHTML = invalid
+    ? '<p class="activity-empty">請選擇有效的開始與結束日期。</p>'
+    : records.length ? records.map(transactionCard).join('') : '<p class="activity-empty">所選日期沒有庫存異動。</p>';
 }
 
 function openAdjustment(item, type) {
@@ -167,7 +256,7 @@ function openAdjustment(item, type) {
   $('modalEyebrow').textContent = type;
   $('modalTitle').textContent = `${type}｜${item.name}`;
   $('modalLocation').textContent = `${item.location}${item.detail ? ` · ${item.detail}` : ''} · 目前 ${item.stock} ${unitOf(item)}`;
-  $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '工地使用';
+  $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '維修使用';
   $('noteInput').value = '';
   $('modal').classList.remove('hidden');
 }
@@ -238,7 +327,7 @@ function saveLocationFromForm(event) {
   if (fromMaterial) $('materialLocation').value = name;
   else $('locationFilter').value = name;
   closeLocationForm();
-  if (!fromMaterial) render();
+  if (!fromMaterial) resetMaterialPage();
   toast('新位置已加入選單');
 }
 
@@ -278,15 +367,22 @@ function saveMaterialFromForm(event) {
   closeMaterialForm();
   $('searchInput').value = '';
   $('locationFilter').value = location;
-  render();
+  resetMaterialPage();
   toast(editing ? '材料資料已更新' : '材料已新增');
 }
 
 function init() {
+  const today = localDateKey();
+  $('statsStartDate').value = `${today.slice(0, 7)}-01`;
+  $('statsEndDate').value = today;
   renderLocationOptions();
   render();
-  $('searchInput').addEventListener('input', render);
-  $('locationFilter').addEventListener('change', render);
+  $('statsStartDate').addEventListener('change', renderStats);
+  $('statsEndDate').addEventListener('change', renderStats);
+  $('searchInput').addEventListener('input', resetMaterialPage);
+  $('locationFilter').addEventListener('change', resetMaterialPage);
+  $('previousMaterialsPage').addEventListener('click', () => changeMaterialPage(-1));
+  $('nextMaterialsPage').addEventListener('click', () => changeMaterialPage(1));
   $('newMaterialButton').addEventListener('click', () => openMaterialForm());
   $('addLocationFromFilter').addEventListener('click', () => openLocationForm());
   $('addLocationFromForm').addEventListener('click', () => openLocationForm(true));
@@ -317,7 +413,7 @@ function init() {
     const amount = adding ? step : -step;
     if (item.stock + amount < 0) return toast('庫存不足，無法扣除這麼多數量');
     item.stock += amount;
-    transactions.push({ materialId: item.id, amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason: $('reasonSelect').value, note: $('noteInput').value });
+    transactions.push({ materialId: item.id, materialName: item.name, unit: unitOf(item), amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason: $('reasonSelect').value, note: $('noteInput').value.trim() });
     save();
     closeAdjustment();
     render();
@@ -325,7 +421,7 @@ function init() {
   };
   $('statsButton').onclick = () => { $('statsPanel').classList.remove('hidden'); $('statsPanel').scrollIntoView({ behavior: 'smooth' }); };
   $('closeStats').onclick = () => $('statsPanel').classList.add('hidden');
-  $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; render(); toast('掃描成功：已開啟 12樓西 材料清單'); };
+  $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
   $('notifyButton').onclick = () => toast('正式版將在低於警戒值時傳送 LINE 通知');
 }
 

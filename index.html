@@ -34,12 +34,21 @@
         <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
       </section>
 
+      <section class="today-panel" aria-labelledby="todayHeading">
+        <div class="section-heading">
+          <div><p class="eyebrow">每日紀錄</p><h2 id="todayHeading">今日庫存異動</h2></div>
+          <span class="today-date" id="todayDate"></span>
+        </div>
+        <p class="activity-summary" id="todaySummary"></p>
+        <div class="transaction-list" id="todayTransactions" aria-live="polite"></div>
+      </section>
+
       <section class="workspace-panel">
         <div class="section-heading">
           <div><p class="eyebrow">快速操作</p><h2>材料清單</h2></div>
           <div class="heading-actions">
             <button class="primary-button compact" id="newMaterialButton">＋ 新增材料</button>
-            <button class="text-button" id="statsButton">查看月統計 →</button>
+            <button class="text-button" id="statsButton">查看統計 →</button>
           </div>
         </div>
 
@@ -53,13 +62,29 @@
 
         <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
         <div class="material-list" id="materialList"></div>
+        <nav class="material-pagination hidden" id="materialPagination" aria-label="材料清單分頁">
+          <button class="page-button" id="previousMaterialsPage" type="button">← 上一頁</button>
+          <span id="materialPageStatus" aria-live="polite"></span>
+          <button class="page-button" id="nextMaterialsPage" type="button">下一頁 →</button>
+        </nav>
       </section>
 
       <section class="stats-panel hidden" id="statsPanel">
-        <div class="section-heading"><div><p class="eyebrow">使用分析</p><h2>本月用量統計</h2></div><button class="text-button" id="closeStats">收合</button></div>
-        <div class="chart" id="usageChart" aria-label="本月材料使用量圖表"></div>
+        <div class="section-heading"><div><p class="eyebrow">使用分析</p><h2>日期區間統計</h2></div><button class="text-button" id="closeStats">收合</button></div>
+        <div class="date-range">
+          <label class="field-label" for="statsStartDate">開始日期<input id="statsStartDate" type="date" /></label>
+          <span class="range-separator">到</span>
+          <label class="field-label" for="statsEndDate">結束日期<input id="statsEndDate" type="date" /></label>
+        </div>
+        <p class="range-error hidden" id="statsRangeError" role="alert">開始日期不能晚於結束日期，且兩個日期都要填寫。</p>
+        <div class="chart" id="usageChart" aria-label="區間材料使用量圖表"></div>
+        <h3 class="activity-heading">各材料使用合計</h3>
+        <div class="usage-breakdown" id="usageBreakdown"></div>
         <div class="report-row"><span>領用最多</span><strong id="topUsed">—</strong></div>
-        <div class="report-row"><span>本月補貨</span><strong id="monthlyRestock">0 件</strong></div>
+        <div class="report-row"><span>使用紀錄</span><strong id="rangeUsage">0 筆</strong></div>
+        <div class="report-row"><span>補貨紀錄</span><strong id="rangeRestock">0 筆</strong></div>
+        <h3 class="activity-heading">異動明細 <span id="rangeCount"></span></h3>
+        <div class="transaction-list" id="rangeTransactions" aria-live="polite"></div>
       </section>
 
       <footer class="bottom-note">資料會保存在此裝置，正式版可同步多人使用並串接 LINE 通知。</footer>
@@ -73,8 +98,8 @@
         <h2 id="modalTitle">調整庫存</h2>
         <p class="modal-location" id="modalLocation"></p>
         <div class="stepper"><button id="decreaseStep">−</button><strong id="stepValue">1</strong><button id="increaseStep">＋</button></div>
-        <label class="field-label">異動原因<select id="reasonSelect"><option>工地使用</option><option>入庫補貨</option><option>退料</option><option>損耗</option><option>盤點調整</option></select></label>
-        <label class="field-label">備註（選填）<input id="noteInput" placeholder="例如：工地 A 使用" /></label>
+        <label class="field-label">異動原因<select id="reasonSelect"><option>入庫補貨</option><option>維修使用</option></select></label>
+        <label class="field-label">備註（選填）<input id="noteInput" placeholder="可輸入寢室號碼" /></label>
         <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
       </div>
     </div>
