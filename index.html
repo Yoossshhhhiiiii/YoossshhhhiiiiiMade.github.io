@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light" />
-    <meta name="inventory-version" content="20261003-white-1" />
+    <meta name="inventory-version" content="20261003-white-2" />
     <meta name="description" content="水電材料庫存與倉位管理" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261003-white-1" />
-    <link rel="stylesheet" href="styles.css?v=20261003-white-1" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261003-white-2" />
+    <link rel="stylesheet" href="styles.css?v=20261003-white-2" />
     <title>庫存管家｜水電材料管理</title>
   </head>
   <body>
@@ -52,6 +52,10 @@
             <article class="summary-card warning"><span>待補庫存</span><strong id="lowStockCount">0</strong><small>項</small></article>
             <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
           </section>
+          <section class="today-panel" id="todayPanel" aria-labelledby="todayHeading">
+            <div class="section-heading"><h2 id="todayHeading">今日做了什麼</h2><span class="today-date" id="todayDate"></span></div>
+            <p class="activity-summary" id="todaySummary"></p><div class="transaction-list" id="todayTransactions" aria-live="polite"></div>
+          </section>
           <section class="workspace-panel" id="inventoryPanel" aria-labelledby="inventoryHeading">
             <div class="section-heading"><h2 id="inventoryHeading">材料清單</h2><span class="section-count" id="filteredMaterialCount"></span></div>
             <div class="filters">
@@ -62,10 +66,6 @@
             <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
             <div class="material-table"><div class="material-columns" aria-hidden="true"><span>材料 / 位置</span><span>庫存</span><span>狀態</span><span>異動</span></div><div class="material-list" id="materialList"></div></div>
             <nav class="material-pagination hidden" id="materialPagination" aria-label="材料清單分頁"><button class="page-button" id="previousMaterialsPage" type="button">← 上一頁</button><span id="materialPageStatus" aria-live="polite"></span><button class="page-button" id="nextMaterialsPage" type="button">下一頁 →</button></nav>
-          </section>
-          <section class="today-panel" id="todayPanel" aria-labelledby="todayHeading">
-            <div class="section-heading"><h2 id="todayHeading">今日做了什麼</h2><span class="today-date" id="todayDate"></span></div>
-            <p class="activity-summary" id="todaySummary"></p><div class="transaction-list" id="todayTransactions" aria-live="polite"></div>
           </section>
           <section class="stats-panel hidden" id="statsPanel" aria-labelledby="statsHeading">
             <div class="section-heading"><h2 id="statsHeading">日期區間統計</h2><button class="text-button" id="closeStats" type="button">回到工作台</button></div>
@@ -152,6 +152,6 @@
     </div>
 
     <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=20261003-white-1"></script>
+    <script src="app.js?v=20261003-white-2"></script>
   </body>
 </html>
