@@ -3,93 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#102a43" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light" />
+    <meta name="inventory-version" content="20261003-white-1" />
     <meta name="description" content="水電材料庫存與倉位管理" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261003-white-1" />
+    <link rel="stylesheet" href="styles.css?v=20261003-white-1" />
     <title>庫存管家｜水電材料管理</title>
   </head>
   <body>
-    <main class="app-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">水電材料庫存</p>
-          <h1>庫存管家</h1>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5" /></symbol>
+      <symbol id="icon-home" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></symbol>
+      <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 9 5v8l-9 5-9-5V8l9-5Z M3 8l9 5 9-5 M12 13v8 M7.5 5.5l9 5" /></symbol>
+      <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M3 3v18h18 M7 15l4-5 4 3 6-8" /></symbol>
+      <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 11-8 11S4 16 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7v6 M12 17h.01" /></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></symbol>
+      <symbol id="icon-qr" viewBox="0 0 24 24"><path d="M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5" /><rect x="8" y="8" width="3" height="3" /><rect x="14" y="8" width="2" height="3" /><path d="M8 14v2h3 M14 14h2v2" /></symbol>
+      <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9 M10 21h4" /></symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14 M5 12h14" /></symbol>
+    </svg>
+    <div class="app-shell" data-view="home">
+      <header class="windowbar">
+        <div class="window-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <span class="window-title">庫存管家</span>
+        <div class="window-tools">
+          <button class="icon-button" id="scanButton" type="button" aria-label="開始掃描倉庫 QR Code" title="掃描倉庫 QR Code"><svg class="icon" aria-hidden="true"><use href="#icon-qr" /></svg></button>
+          <button class="icon-button" id="notifyButton" type="button" aria-label="通知設定" title="通知設定"><svg class="icon" aria-hidden="true"><use href="#icon-bell" /></svg></button>
         </div>
-        <button class="icon-button" id="notifyButton" aria-label="通知設定">⌁</button>
       </header>
-
-      <section class="scan-card">
-        <div class="scan-icon">▦</div>
-        <div class="scan-copy">
-          <strong>掃描倉庫 QR Code</strong>
-          <span>快速開啟指定樓層的材料清單</span>
-        </div>
-        <button class="primary-button compact" id="scanButton">開始掃描</button>
-      </section>
-
-      <section class="summary-grid" aria-label="庫存摘要">
-        <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
-        <article class="summary-card warning"><span>低庫存</span><strong id="lowStockCount">0</strong><small>項待補</small></article>
-        <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
-      </section>
-
-      <section class="today-panel" aria-labelledby="todayHeading">
-        <div class="section-heading">
-          <div><p class="eyebrow">每日紀錄</p><h2 id="todayHeading">今日庫存異動</h2></div>
-          <span class="today-date" id="todayDate"></span>
-        </div>
-        <p class="activity-summary" id="todaySummary"></p>
-        <div class="transaction-list" id="todayTransactions" aria-live="polite"></div>
-      </section>
-
-      <section class="workspace-panel">
-        <div class="section-heading">
-          <div><p class="eyebrow">快速操作</p><h2>材料清單</h2></div>
-          <div class="heading-actions">
-            <button class="primary-button compact" id="newMaterialButton">＋ 新增材料</button>
-            <button class="text-button" id="statsButton">查看統計 →</button>
-          </div>
-        </div>
-
-        <div class="filters">
-          <label class="search-box"><span>⌕</span><input id="searchInput" type="search" placeholder="搜尋材料名稱或規格" /></label>
-          <div class="location-filter-group">
-            <label class="select-box"><span>位置</span><select id="locationFilter"></select></label>
-            <button class="add-location-button" type="button" id="addLocationFromFilter">＋ 新增位置</button>
-          </div>
-        </div>
-
-        <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
-        <div class="material-list" id="materialList"></div>
-        <nav class="material-pagination hidden" id="materialPagination" aria-label="材料清單分頁">
-          <button class="page-button" id="previousMaterialsPage" type="button">← 上一頁</button>
-          <span id="materialPageStatus" aria-live="polite"></span>
-          <button class="page-button" id="nextMaterialsPage" type="button">下一頁 →</button>
-        </nav>
-      </section>
-
-      <section class="stats-panel hidden" id="statsPanel">
-        <div class="section-heading"><div><p class="eyebrow">使用分析</p><h2>日期區間統計</h2></div><button class="text-button" id="closeStats">收合</button></div>
-        <div class="date-range">
-          <label class="field-label" for="statsStartDate">開始日期<input id="statsStartDate" type="date" /></label>
-          <span class="range-separator">到</span>
-          <label class="field-label" for="statsEndDate">結束日期<input id="statsEndDate" type="date" /></label>
-        </div>
-        <p class="range-error hidden" id="statsRangeError" role="alert">開始日期不能晚於結束日期，且兩個日期都要填寫。</p>
-        <div class="chart" id="usageChart" aria-label="區間材料使用量圖表"></div>
-        <h3 class="activity-heading">各材料使用合計</h3>
-        <div class="usage-breakdown" id="usageBreakdown"></div>
-        <div class="report-row"><span>領用最多</span><strong id="topUsed">—</strong></div>
-        <div class="report-row"><span>使用紀錄</span><strong id="rangeUsage">0 筆</strong></div>
-        <div class="report-row"><span>補貨紀錄</span><strong id="rangeRestock">0 筆</strong></div>
-        <h3 class="activity-heading">異動明細 <span id="rangeCount"></span></h3>
-        <div class="transaction-list" id="rangeTransactions" aria-live="polite"></div>
-      </section>
-
-      <footer class="bottom-note">資料會保存在此裝置，正式版可同步多人使用並串接 LINE 通知。</footer>
-    </main>
-
+      <div class="app-layout">
+        <aside class="sidebar">
+          <div class="brand"><svg class="brand-icon icon" aria-hidden="true"><use href="#icon-layers" /></svg><div><strong>庫存管家</strong><small>水電材料管理</small></div></div>
+          <nav class="main-navigation" aria-label="主要導覽">
+            <button class="nav-button active" type="button" data-view="home" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-home" /></svg><span>工作台</span></button>
+            <button class="nav-button" type="button" data-view="materials"><svg class="icon" aria-hidden="true"><use href="#icon-package" /></svg><span>材料清單</span></button>
+            <button class="nav-button" type="button" data-view="stats" id="statsButton"><svg class="icon" aria-hidden="true"><use href="#icon-chart" /></svg><span>查看統計</span></button>
+            <button class="nav-button" type="button" data-view="locations"><svg class="icon" aria-hidden="true"><use href="#icon-pin" /></svg><span>倉庫位置</span></button>
+          </nav>
+          <div class="sidebar-shortcuts"><p>快捷篩選</p><button class="shortcut-button" id="lowStockFilter" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-alert" /></svg><span>待補庫存</span><strong id="sidebarLowCount">0</strong></button></div>
+          <div class="sidebar-note"><span class="brand-initial">庫</span><div>每次異動，都有紀錄。<small>水電材料庫存系統</small></div></div>
+        </aside>
+        <main class="workspace">
+          <header class="page-heading"><div><p class="eyebrow" id="workDate">水電材料庫存</p><h1 id="pageTitle">倉庫，一目了然。</h1><p class="page-subtitle" id="pageSubtitle">找到材料，記錄每一次進出。</p></div><button class="primary-button new-material-button" id="newMaterialButton" type="button" aria-label="新增材料"><svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg><span>新增材料</span></button></header>
+          <section class="summary-grid" id="summaryPanel" aria-label="庫存摘要">
+            <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
+            <article class="summary-card warning"><span>待補庫存</span><strong id="lowStockCount">0</strong><small>項</small></article>
+            <article class="summary-card"><span>本月領用</span><strong id="monthlyUsage">0</strong><small>件</small></article>
+          </section>
+          <section class="workspace-panel" id="inventoryPanel" aria-labelledby="inventoryHeading">
+            <div class="section-heading"><h2 id="inventoryHeading">材料清單</h2><span class="section-count" id="filteredMaterialCount"></span></div>
+            <div class="filters">
+              <label class="search-box"><svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg><input id="searchInput" type="search" aria-label="搜尋材料名稱、規格或詳細位置" placeholder="搜尋材料名稱或位置" /></label>
+              <div class="location-filter-group"><label class="select-box"><svg class="icon" aria-hidden="true"><use href="#icon-pin" /></svg><select id="locationFilter" aria-label="選擇倉庫位置"></select></label><button class="add-location-button" type="button" id="addLocationFromFilter">＋ 新增位置</button></div>
+              <button class="filter-button" type="button" id="lowStockToggle" aria-pressed="false">待補</button>
+            </div>
+            <div class="location-note" id="locationNote">目前顯示全部倉庫位置</div>
+            <div class="material-table"><div class="material-columns" aria-hidden="true"><span>材料 / 位置</span><span>庫存</span><span>狀態</span><span>異動</span></div><div class="material-list" id="materialList"></div></div>
+            <nav class="material-pagination hidden" id="materialPagination" aria-label="材料清單分頁"><button class="page-button" id="previousMaterialsPage" type="button">← 上一頁</button><span id="materialPageStatus" aria-live="polite"></span><button class="page-button" id="nextMaterialsPage" type="button">下一頁 →</button></nav>
+          </section>
+          <section class="today-panel" id="todayPanel" aria-labelledby="todayHeading">
+            <div class="section-heading"><h2 id="todayHeading">今日做了什麼</h2><span class="today-date" id="todayDate"></span></div>
+            <p class="activity-summary" id="todaySummary"></p><div class="transaction-list" id="todayTransactions" aria-live="polite"></div>
+          </section>
+          <section class="stats-panel hidden" id="statsPanel" aria-labelledby="statsHeading">
+            <div class="section-heading"><h2 id="statsHeading">日期區間統計</h2><button class="text-button" id="closeStats" type="button">回到工作台</button></div>
+            <div class="date-range"><label class="field-label" for="statsStartDate">開始日期<input id="statsStartDate" type="date" /></label><span class="range-separator">到</span><label class="field-label" for="statsEndDate">結束日期<input id="statsEndDate" type="date" /></label></div>
+            <p class="range-error hidden" id="statsRangeError" role="alert">開始日期不能晚於結束日期，且兩個日期都要填寫。</p>
+            <div class="chart" id="usageChart" aria-label="區間材料使用量圖表"></div><h3 class="activity-heading">各材料使用合計</h3><div class="usage-breakdown" id="usageBreakdown"></div>
+            <div class="report-row"><span>領用最多</span><strong id="topUsed">—</strong></div><div class="report-row"><span>使用紀錄</span><strong id="rangeUsage">0 筆</strong></div><div class="report-row"><span>補貨紀錄</span><strong id="rangeRestock">0 筆</strong></div>
+            <h3 class="activity-heading">異動明細 <span id="rangeCount"></span></h3><div class="transaction-list" id="rangeTransactions" aria-live="polite"></div>
+          </section>
+          <section class="locations-panel hidden" id="locationsPanel" aria-labelledby="locationsHeading"><div class="section-heading"><h2 id="locationsHeading">倉庫位置</h2><button class="text-button" type="button" id="addLocationFromPage">＋ 新增位置</button></div><div class="warehouse-locations" id="warehouseLocations"></div></section>
+          <footer class="bottom-note">資料會保存在此裝置，正式版可同步多人使用並串接 LINE 通知。</footer>
+        </main>
+      </div>
+    </div>
     <div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-backdrop" data-close-modal></div>
       <div class="modal-card">
@@ -161,7 +151,7 @@
       </div>
     </div>
 
-    <div class="toast hidden" id="toast"></div>
-    <script src="app.js"></script>
+    <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js?v=20261003-white-1"></script>
   </body>
 </html>

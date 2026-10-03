@@ -57,9 +57,11 @@ let customLocations = JSON.parse(localStorage.getItem('inventory-locations') || 
 let activeMaterial = null;
 let editingMaterialId = null;
 let locationReturnToMaterial = false;
+let locationReturnView = 'home';
 let step = 1;
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
+let lowStockOnly = false;
 const $ = id => document.getElementById(id);
 
 function save() {
@@ -157,12 +159,57 @@ function renderLocationOptions() {
   $('materialLocation').value = selectedMaterial;
 }
 
+function renderWarehouseLocations() {
+  const target = $('warehouseLocations');
+  if (!target) return;
+  target.innerHTML = allLocations().map(location => `
+    <button class="location-card" type="button" data-location="${escapeHTML(location)}">
+      <svg class="icon" aria-hidden="true"><use href="#icon-pin" /></svg>
+      <span>${escapeHTML(location)}</span><small>${materials.filter(item => item.location === location).length} 項</small>
+    </button>`).join('');
+}
+
+function setView(view = 'home') {
+  const headings = {
+    home: ['倉庫，一目了然。', '找到材料，記錄每一次進出。'],
+    materials: ['每一件，都有位置。', '搜尋材料，快速確認庫存與存放位置。'],
+    stats: ['每次使用，都有跡可循。', '選擇日期，查看材料、原因與備註。'],
+    locations: ['找到對的位置。', '從樓層到倉庫，整理每個存放位置。']
+  };
+  if (!headings[view]) return;
+  document.querySelector('.app-shell').dataset.view = view;
+  $('pageTitle').textContent = headings[view][0];
+  $('pageSubtitle').textContent = headings[view][1];
+  $('summaryPanel').classList.toggle('hidden', view === 'locations');
+  $('inventoryPanel').classList.toggle('hidden', view !== 'home' && view !== 'materials');
+  $('todayPanel').classList.toggle('hidden', view !== 'home');
+  $('statsPanel').classList.toggle('hidden', view !== 'stats');
+  $('locationsPanel').classList.toggle('hidden', view !== 'locations');
+  document.querySelectorAll('.nav-button[data-view]').forEach(button => {
+    const selected = button.dataset.view === view;
+    button.classList.toggle('active', selected);
+    if (selected) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+}
+
+function toggleLowStock(force) {
+  lowStockOnly = typeof force === 'boolean' ? force : !lowStockOnly;
+  setView('materials');
+  resetMaterialPage();
+}
+
+function scrollBehavior() {
+  return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth';
+}
+
 function render() {
   const term = $('searchInput').value.trim().toLowerCase();
   const location = $('locationFilter').value;
   const filtered = materials.filter(item =>
     (!term || `${item.name} ${item.spec} ${item.detail || ''}`.toLowerCase().includes(term)) &&
-    (location === '全部位置' || item.location === location)
+    (location === '全部位置' || item.location === location) &&
+    (!lowStockOnly || isLow(item))
   );
   const paginated = location === '全部位置';
   const pageCount = paginated ? Math.max(1, Math.ceil(filtered.length / MATERIALS_PER_PAGE)) : 1;
@@ -176,28 +223,28 @@ function render() {
 
   $('materialCount').textContent = materials.length;
   $('lowStockCount').textContent = materials.filter(isLow).length;
+  if ($('sidebarLowCount')) $('sidebarLowCount').textContent = materials.filter(isLow).length;
+  if ($('filteredMaterialCount')) $('filteredMaterialCount').textContent = `共 ${filtered.length} 項${lowStockOnly ? '待補貨' : ''}`;
+  $('lowStockToggle')?.setAttribute?.('aria-pressed', String(lowStockOnly));
   $('monthlyUsage').textContent = formatNumber(used);
   $('locationNote').textContent = location === '全部位置' ? '目前顯示全部倉庫位置' : `目前位置：${location}`;
   $('materialList').innerHTML = filtered.length ? visibleMaterials.map(item => `
     <article class="material-card ${isLow(item) ? 'low' : ''}">
-      <div>
-        <div class="material-name">${escapeHTML(item.name)}</div>
-        <div class="material-meta">${escapeHTML(displaySpec(item))} · ${escapeHTML(item.location)}${item.detail ? ` · ${escapeHTML(item.detail)}` : ''}${item.alert == null ? ' · 警戒值待設定' : ''}</div>
-        <div class="material-actions">
-          <button class="round-button minus" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHTML(item.name)} 庫存">−</button>
-          <button class="round-button" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHTML(item.name)} 庫存">＋</button>
-          <button class="manage-button" data-action="manage" data-id="${item.id}">領用數量</button>
-          <button class="edit-button" data-action="edit" data-id="${item.id}">編輯資料</button>
-        </div>
+      <div class="material-info">
+        <div class="material-heading"><div class="material-name">${escapeHTML(item.name)}</div><button class="edit-button" type="button" data-action="edit" data-id="${item.id}" aria-label="編輯 ${escapeHTML(item.name)} 資料">編輯</button></div>
+        <div class="material-meta"><span class="material-place">${escapeHTML(item.location)}${item.detail ? ` · ${escapeHTML(item.detail)}` : ''}</span><span class="material-spec">${escapeHTML(displaySpec(item))}${item.alert == null ? ' · 警戒值待設定' : ''}</span></div>
       </div>
-      <div><span class="stock-number ${isLow(item) ? 'low' : ''}">${formatNumber(item.stock)}</span><span class="stock-unit">${escapeHTML(unitOf(item))}</span></div>
-    </article>`).join('') : '<div class="location-note">找不到符合條件的材料。</div>';
+      <div class="stock-info"><span class="stock-number ${isLow(item) ? 'low' : ''}">${formatNumber(item.stock)}</span><span class="stock-unit">${escapeHTML(unitOf(item))}</span></div>
+      <span class="material-state ${isLow(item) ? 'low' : ''}">${isLow(item) ? '需補貨' : item.alert == null ? '未設警戒' : '充足'}</span>
+      <div class="material-actions"><button class="round-button minus" type="button" data-action="minus" data-id="${item.id}" aria-label="減少 ${escapeHTML(item.name)} 庫存">−</button><button class="round-button" type="button" data-action="plus" data-id="${item.id}" aria-label="增加 ${escapeHTML(item.name)} 庫存">＋</button></div>
+    </article>`).join('') : '<div class="material-empty">找不到符合條件的材料。</div>';
   $('materialPagination').classList.toggle('hidden', !paginated || pageCount === 1);
   $('materialPageStatus').textContent = `第 ${materialPage}／${pageCount} 頁 · 共 ${filtered.length} 項`;
   $('previousMaterialsPage').disabled = materialPage === 1;
   $('nextMaterialsPage').disabled = materialPage === pageCount;
   renderToday();
   renderStats();
+  renderWarehouseLocations();
 }
 
 function resetMaterialPage() {
@@ -208,7 +255,7 @@ function resetMaterialPage() {
 function changeMaterialPage(delta) {
   materialPage += delta;
   render();
-  $('materialList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('materialList').scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
 }
 
 function renderStats() {
@@ -259,6 +306,7 @@ function openAdjustment(item, type) {
   $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '維修使用';
   $('noteInput').value = '';
   $('modal').classList.remove('hidden');
+  $('noteInput').focus?.();
 }
 
 function closeAdjustment() {
@@ -296,6 +344,7 @@ function closeMaterialForm() {
 
 function openLocationForm(fromMaterial = false) {
   locationReturnToMaterial = fromMaterial;
+  locationReturnView = document.querySelector('.app-shell')?.dataset.view || 'home';
   $('locationForm').reset();
   if (fromMaterial) $('materialModal').classList.add('hidden');
   $('locationModal').classList.remove('hidden');
@@ -308,7 +357,8 @@ function closeLocationForm() {
     $('materialModal').classList.remove('hidden');
     $('materialLocation').focus();
   } else {
-    $('locationFilter').focus();
+    setView(locationReturnView);
+    $(locationReturnView === 'locations' ? 'addLocationFromPage' : 'locationFilter').focus();
   }
   locationReturnToMaterial = false;
 }
@@ -325,9 +375,15 @@ function saveLocationFromForm(event) {
   localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
   renderLocationOptions();
   if (fromMaterial) $('materialLocation').value = name;
-  else $('locationFilter').value = name;
+  else {
+    $('locationFilter').value = name;
+    lowStockOnly = false;
+  }
   closeLocationForm();
-  if (!fromMaterial) resetMaterialPage();
+  if (!fromMaterial) {
+    setView('materials');
+    resetMaterialPage();
+  }
   toast('新位置已加入選單');
 }
 
@@ -367,16 +423,31 @@ function saveMaterialFromForm(event) {
   closeMaterialForm();
   $('searchInput').value = '';
   $('locationFilter').value = location;
+  lowStockOnly = false;
+  setView('materials');
   resetMaterialPage();
   toast(editing ? '材料資料已更新' : '材料已新增');
 }
 
 function init() {
   const today = localDateKey();
+  $('workDate').textContent = new Intl.DateTimeFormat('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
   $('statsStartDate').value = `${today.slice(0, 7)}-01`;
   $('statsEndDate').value = today;
   renderLocationOptions();
   render();
+  document.querySelectorAll('.nav-button[data-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
+  $('lowStockToggle').addEventListener('click', () => toggleLowStock());
+  $('lowStockFilter').addEventListener('click', () => toggleLowStock(true));
+  $('addLocationFromPage').addEventListener('click', () => openLocationForm());
+  $('warehouseLocations').addEventListener('click', event => {
+    const button = event.target.closest('[data-location]');
+    if (!button) return;
+    $('locationFilter').value = button.dataset.location;
+    lowStockOnly = false;
+    setView('materials');
+    resetMaterialPage();
+  });
   $('statsStartDate').addEventListener('change', renderStats);
   $('statsEndDate').addEventListener('change', renderStats);
   $('searchInput').addEventListener('input', resetMaterialPage);
@@ -392,6 +463,21 @@ function init() {
   document.querySelectorAll('[data-close-material-modal]').forEach(button => button.addEventListener('click', closeMaterialForm));
   document.querySelectorAll('[data-close-modal]').forEach(button => button.addEventListener('click', closeAdjustment));
   document.addEventListener('keydown', event => {
+    if (event.key === 'Tab') {
+      const dialog = document.querySelector('.modal:not(.hidden)');
+      if (!dialog) return;
+      const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')];
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+      return;
+    }
     if (event.key !== 'Escape') return;
     if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
     else { closeMaterialForm(); closeAdjustment(); }
@@ -419,9 +505,8 @@ function init() {
     render();
     toast(isLow(item) ? `${item.name} 已異動，庫存低於警戒值` : '庫存異動已完成');
   };
-  $('statsButton').onclick = () => { $('statsPanel').classList.remove('hidden'); $('statsPanel').scrollIntoView({ behavior: 'smooth' }); };
-  $('closeStats').onclick = () => $('statsPanel').classList.add('hidden');
-  $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
+  $('closeStats').onclick = () => setView('home');
+  $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; lowStockOnly = false; setView('materials'); resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
   $('notifyButton').onclick = () => toast('正式版將在低於警戒值時傳送 LINE 通知');
 }
 
