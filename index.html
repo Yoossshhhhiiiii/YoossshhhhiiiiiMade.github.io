@@ -5,13 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light" />
-    <meta name="inventory-version" content="20261003-white-2" />
+    <meta name="inventory-version" content="20261005-intro-1" />
     <meta name="description" content="水電材料庫存與倉位管理" />
-    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261003-white-2" />
-    <link rel="stylesheet" href="styles.css?v=20261003-white-2" />
+    <script>
+      document.documentElement.classList.add('intro-active');
+      window.inventoryIntroFallback = window.setTimeout(() => {
+        document.documentElement.classList.remove('intro-active', 'intro-exiting');
+        const intro = document.getElementById('pageIntro');
+        const shell = document.querySelector('.app-shell');
+        if (intro) intro.hidden = true;
+        if (shell) { shell.inert = false; shell.removeAttribute('aria-hidden'); }
+      }, 10000);
+    </script>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261005-intro-1" />
+    <link rel="stylesheet" href="styles.css?v=20261005-intro-1" />
+    <script src="intro.js?v=20261005-intro-1" defer></script>
     <title>庫存管家｜水電材料管理</title>
   </head>
   <body>
+    <div class="page-intro" id="pageIntro" role="dialog" aria-modal="true" aria-label="庫存管家校徽開場" hidden>
+      <picture class="intro-logo-frame">
+        <source media="(prefers-reduced-motion: reduce)" srcset="assets/ntnu-logo.png?v=20261005-intro-1" />
+        <img class="intro-logo" id="introLogo" src="assets/ntnu-opening.png?v=20261005-intro-1" data-still-src="assets/ntnu-logo.png?v=20261005-intro-1" alt="師大校徽" width="480" height="480" loading="eager" fetchpriority="high" />
+      </picture>
+      <button class="intro-skip" id="skipIntro" type="button">略過開場 <span aria-hidden="true">→</span></button>
+    </div>
     <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5" /></symbol>
       <symbol id="icon-home" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></symbol>
@@ -46,7 +64,7 @@
           <div class="sidebar-note"><span class="brand-initial">庫</span><div>每次異動，都有紀錄。<small>水電材料庫存系統</small></div></div>
         </aside>
         <main class="workspace">
-          <header class="page-heading"><div><p class="eyebrow" id="workDate">水電材料庫存</p><h1 id="pageTitle">倉庫，一目了然。</h1><p class="page-subtitle" id="pageSubtitle">找到材料，記錄每一次進出。</p></div><button class="primary-button new-material-button" id="newMaterialButton" type="button" aria-label="新增材料"><svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg><span>新增材料</span></button></header>
+          <header class="page-heading"><div><p class="eyebrow" id="workDate">水電材料庫存</p><h1 id="pageTitle" tabindex="-1">倉庫，一目了然。</h1><p class="page-subtitle" id="pageSubtitle">找到材料，記錄每一次進出。</p></div><button class="primary-button new-material-button" id="newMaterialButton" type="button" aria-label="新增材料"><svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg><span>新增材料</span></button></header>
           <section class="summary-grid" id="summaryPanel" aria-label="庫存摘要">
             <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
             <article class="summary-card warning"><span>待補庫存</span><strong id="lowStockCount">0</strong><small>項</small></article>
@@ -152,6 +170,6 @@
     </div>
 
     <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=20261003-white-2"></script>
+    <script src="app.js?v=20261005-intro-1"></script>
   </body>
 </html>

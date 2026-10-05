@@ -7,6 +7,17 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: var(--surface); }
+.page-intro { display: none; position: fixed; inset: 0; z-index: 10; background: #fff; place-items: center; opacity: 1; transition: opacity 320ms ease-in; }
+.intro-active .page-intro { display: grid; }
+.intro-active body { overflow: hidden; }
+.intro-active .app-shell { opacity: 0; pointer-events: none; }
+.intro-active.intro-exiting .app-shell { opacity: 1; pointer-events: auto; transition: opacity 320ms ease-out; }
+.intro-active.intro-exiting .page-intro { opacity: 0; pointer-events: none; }
+.intro-logo-frame { display: block; width: min(300px, 66vw, 60vh); width: min(300px, 66vw, 60svh); aspect-ratio: 1; }
+.intro-logo { display: block; width: 100%; height: 100%; object-fit: contain; }
+.intro-skip { position: absolute; right: max(24px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); min-width: 100px; min-height: 44px; padding: 10px; font-size: 12px; }
+.intro-skip span { margin-left: 8px; }
+@media (prefers-reduced-motion: reduce) { .page-intro, .intro-active.intro-exiting .app-shell { transition: none; } }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; touch-action: manipulation; background: transparent; border: 0; }
 button:disabled { cursor: not-allowed; opacity: .35; }
