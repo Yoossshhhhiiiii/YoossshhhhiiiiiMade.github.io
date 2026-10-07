@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-storage-mode="cloud">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light" />
-    <meta name="inventory-version" content="20261005-intro-1" />
+    <meta name="inventory-version" content="20261007-cloud-1" />
     <meta name="description" content="水電材料庫存與倉位管理" />
     <script>
       document.documentElement.classList.add('intro-active');
@@ -18,7 +18,7 @@
       }, 10000);
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261005-intro-1" />
-    <link rel="stylesheet" href="styles.css?v=20261005-intro-1" />
+    <link rel="stylesheet" href="styles.css?v=20261007-cloud-1" />
     <script src="intro.js?v=20261005-intro-1" defer></script>
     <title>庫存管家｜水電材料管理</title>
   </head>
@@ -65,6 +65,25 @@
         </aside>
         <main class="workspace">
           <header class="page-heading"><div><p class="eyebrow" id="workDate">水電材料庫存</p><h1 id="pageTitle" tabindex="-1">倉庫，一目了然。</h1><p class="page-subtitle" id="pageSubtitle">找到材料，記錄每一次進出。</p></div><button class="primary-button new-material-button" id="newMaterialButton" type="button" aria-label="新增材料"><svg class="icon" aria-hidden="true"><use href="#icon-plus" /></svg><span>新增材料</span></button></header>
+          <section class="cloud-panel hidden" id="cloudPanel" aria-labelledby="cloudHeading">
+            <h2 id="cloudHeading">帳號與同步</h2>
+            <p class="cloud-status" id="cloudStatus" role="status" aria-live="polite">正在準備雲端連線</p>
+            <p class="cloud-detail" id="cloudDetail">舊資料會保留，不會自動上傳或覆蓋。</p>
+            <form class="cloud-login" id="cloudLoginForm">
+              <label class="field-label" for="cloudEmail">Email<input id="cloudEmail" type="email" required maxlength="320" autocomplete="username" placeholder="輸入經核准的 Email" /></label>
+              <label class="field-label" for="cloudPassword">網站密碼<input id="cloudPassword" type="password" required autocomplete="current-password" placeholder="不是校務信箱密碼" /></label>
+              <button class="primary-button" id="cloudLoginButton" type="submit" disabled>登入</button>
+            </form>
+            <div class="cloud-actions hidden" id="cloudSignedIn"><span class="cloud-account" id="cloudAccount"></span><button class="secondary-button" id="cloudRefreshButton" type="button">重新同步</button><button class="secondary-button" id="cloudLogoutButton" type="button">登出此裝置</button></div>
+            <div class="cloud-actions"><button class="secondary-button" id="backupDeviceButton" type="button">下載此裝置舊資料備份</button><button class="secondary-button hidden" id="backupCloudButton" type="button">下載目前雲端備份</button><button class="primary-button hidden" id="cloudRetryButton" type="button">確認待處理操作</button></div>
+            <div class="cloud-import hidden" id="cloudImportPanel">
+              <h3>首次匯入：以手機資料為準</h3><p class="cloud-detail" id="cloudLegacyCount"></p>
+              <p class="cloud-detail">匯入材料、位置與歷史異動紀錄；不會重新加減已記錄的庫存。雲端一旦已有資料，就不能再次覆蓋。</p>
+              <label class="cloud-confirm"><input id="confirmPhoneImport" type="checkbox" />我現在使用的是原本管理庫存、資料最完整的手機。</label>
+              <label class="cloud-confirm"><input id="confirmSavedBackup" type="checkbox" />我已下載並確認備份儲存在手機「檔案」中。</label>
+              <button class="primary-button" id="cloudImportButton" type="button" disabled>以這支手機的資料首次匯入</button>
+            </div>
+          </section>
           <section class="summary-grid" id="summaryPanel" aria-label="庫存摘要">
             <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
             <article class="summary-card warning"><span>待補庫存</span><strong id="lowStockCount">0</strong><small>項</small></article>
@@ -107,7 +126,7 @@
         <p class="modal-location" id="modalLocation"></p>
         <div class="stepper"><button id="decreaseStep">−</button><strong id="stepValue">1</strong><button id="increaseStep">＋</button></div>
         <label class="field-label">異動原因<select id="reasonSelect"><option>入庫補貨</option><option>維修使用</option></select></label>
-        <label class="field-label">備註（選填）<input id="noteInput" placeholder="可輸入寢室號碼" /></label>
+        <label class="field-label">備註（選填）<input id="noteInput" maxlength="2000" placeholder="可輸入寢室號碼" /></label>
         <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
       </div>
     </div>
@@ -164,12 +183,15 @@
           <label class="field-label" for="newLocationName">位置名稱 <span class="required-mark">＊</span>
             <input id="newLocationName" required maxlength="40" placeholder="例如：地下 1 樓、13樓西" autocomplete="off" />
           </label>
-          <div class="modal-actions"><button class="secondary-button" type="button" data-close-location-modal>取消</button><button class="primary-button" type="submit">儲存位置</button></div>
+          <div class="modal-actions"><button class="secondary-button" type="button" data-close-location-modal>取消</button><button class="primary-button" id="saveLocationButton" type="submit">儲存位置</button></div>
         </form>
       </div>
     </div>
 
     <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-    <script src="app.js?v=20261005-intro-1"></script>
+    <script src="cloud-config.js?v=20261007-cloud-1"></script>
+    <script src="vendor/supabase-2.117.3.js"></script>
+    <script src="cloud.js?v=20261007-cloud-1"></script>
+    <script src="app.js?v=20261007-cloud-1"></script>
   </body>
 </html>

@@ -50,12 +50,15 @@ const firstFloorImport = [
 ];
 const firstFloorImportKey = 'inventory-first-floor-photo-import-2026-09-29-v1';
 
+const cloudEnabled = window.INVENTORY_CLOUD_CONFIG?.enabled === true ||
+  (window.INVENTORY_CLOUD_CONFIG == null && document.documentElement.dataset.storageMode === 'cloud');
 const storedMaterials = localStorage.getItem('inventory-materials');
-let materials = storedMaterials ? JSON.parse(storedMaterials) : seed;
-let transactions = JSON.parse(localStorage.getItem('inventory-transactions') || '[]');
-let customLocations = JSON.parse(localStorage.getItem('inventory-locations') || '[]');
+let materials = cloudEnabled ? [] : storedMaterials ? JSON.parse(storedMaterials) : seed;
+let transactions = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-transactions') || '[]');
+let customLocations = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-locations') || '[]');
 let activeMaterial = null;
 let editingMaterialId = null;
+let editingMaterialVersion = null;
 let locationReturnToMaterial = false;
 let locationReturnView = 'home';
 let step = 1;
@@ -65,6 +68,7 @@ let lowStockOnly = false;
 const $ = id => document.getElementById(id);
 
 function save() {
+  if (cloudEnabled) throw new Error('雲端模式不可改寫裝置舊資料');
   localStorage.setItem('inventory-materials', JSON.stringify(materials));
   localStorage.setItem('inventory-transactions', JSON.stringify(transactions));
 }
@@ -85,7 +89,19 @@ function importFirstFloorMaterials() {
   localStorage.setItem(firstFloorImportKey, 'done');
 }
 
-importFirstFloorMaterials();
+if (!cloudEnabled) importFirstFloorMaterials();
+
+function canModifyInventory() {
+  return !cloudEnabled || !!window.InventoryCloud?.canWrite();
+}
+
+function renderAccessControls() {
+  const disabled = !canModifyInventory();
+  for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'saveMaterialButton', 'confirmAdjustment', 'saveLocationButton']) {
+    if ($(id)) $(id).disabled = disabled;
+  }
+  document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
+}
 
 function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -245,6 +261,7 @@ function render() {
   renderToday();
   renderStats();
   renderWarehouseLocations();
+  renderAccessControls();
 }
 
 function resetMaterialPage() {
@@ -297,6 +314,7 @@ function renderStats() {
 }
 
 function openAdjustment(item, type) {
+  if (!canModifyInventory()) return toast('請先登入並完成雲端同步，尚未異動庫存');
   activeMaterial = item;
   step = 1;
   $('stepValue').textContent = step;
@@ -315,7 +333,9 @@ function closeAdjustment() {
 }
 
 function openMaterialForm(item = null) {
+  if (!canModifyInventory()) return toast('請先登入並完成雲端同步');
   editingMaterialId = item?.id ?? null;
+  editingMaterialVersion = item?.version ?? null;
   $('materialForm').reset();
   $('materialModalTitle').textContent = item ? '編輯材料資料' : '新增材料';
   $('saveMaterialButton').textContent = item ? '儲存變更' : '儲存材料';
@@ -340,9 +360,11 @@ function openMaterialForm(item = null) {
 function closeMaterialForm() {
   $('materialModal').classList.add('hidden');
   editingMaterialId = null;
+  editingMaterialVersion = null;
 }
 
 function openLocationForm(fromMaterial = false) {
+  if (!canModifyInventory()) return toast('請先登入並完成雲端同步');
   locationReturnToMaterial = fromMaterial;
   locationReturnView = document.querySelector('.app-shell')?.dataset.view || 'home';
   $('locationForm').reset();
@@ -363,16 +385,22 @@ function closeLocationForm() {
   locationReturnToMaterial = false;
 }
 
-function saveLocationFromForm(event) {
+async function saveLocationFromForm(event) {
   event.preventDefault();
+  if (!canModifyInventory()) return toast('目前無法儲存，請先完成雲端同步');
   const name = $('newLocationName').value.trim();
   if (!name) return toast('請輸入位置名稱');
   if (allLocations().some(location => location.toLowerCase() === name.toLowerCase()) || name === '全部位置') {
     return toast('這個位置已在選單中');
   }
   const fromMaterial = locationReturnToMaterial;
-  customLocations.push(name);
-  localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
+  if (cloudEnabled) {
+    try { await window.InventoryCloud.mutate('add_location', { name }); }
+    catch (error) { return toast(error.message); }
+  } else {
+    customLocations.push(name);
+    localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
+  }
   renderLocationOptions();
   if (fromMaterial) $('materialLocation').value = name;
   else {
@@ -393,8 +421,9 @@ function toast(message) {
   setTimeout(() => $('toast').classList.add('hidden'), 2600);
 }
 
-function saveMaterialFromForm(event) {
+async function saveMaterialFromForm(event) {
   event.preventDefault();
+  if (!canModifyInventory()) return toast('目前無法儲存，請先完成雲端同步');
   const form = $('materialForm');
   if (!form.reportValidity()) return;
   const editing = materials.find(item => item.id === editingMaterialId);
@@ -414,12 +443,19 @@ function saveMaterialFromForm(event) {
     return toast('這個倉庫位置已有相同名稱的材料');
   }
 
-  if (editing) {
+  if (stock > 2147483647 || alert > 2147483647) return toast('數量過大，請檢查輸入');
+  if (cloudEnabled) {
+    try {
+      await window.InventoryCloud.mutate('save_material', {
+        id: editingMaterialId, version: editingMaterialVersion, name, category, unit, stock, alert, location, detail
+      });
+    } catch (error) { return toast(error.message); }
+  } else if (editing) {
     Object.assign(editing, { name, spec: `${category}／${unit}`, alert, location, detail });
   } else {
     materials.push({ id: Math.max(0, ...materials.map(item => item.id)) + 1, name, spec: `${category}／${unit}`, stock, alert, location, detail });
   }
-  save();
+  if (!cloudEnabled) save();
   closeMaterialForm();
   $('searchInput').value = '';
   $('locationFilter').value = location;
@@ -492,22 +528,61 @@ function init() {
   });
   $('increaseStep').onclick = () => { step++; $('stepValue').textContent = step; };
   $('decreaseStep').onclick = () => { step = Math.max(1, step - 1); $('stepValue').textContent = step; };
-  $('confirmAdjustment').onclick = () => {
+  $('confirmAdjustment').onclick = async () => {
     if (!activeMaterial) return;
+    if (!canModifyInventory()) return toast('請先確認連線或待處理操作，尚未新增異動');
     const item = activeMaterial;
     const adding = $('modalEyebrow').textContent === '增加庫存';
     const amount = adding ? step : -step;
     if (item.stock + amount < 0) return toast('庫存不足，無法扣除這麼多數量');
-    item.stock += amount;
-    transactions.push({ materialId: item.id, materialName: item.name, unit: unitOf(item), amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason: $('reasonSelect').value, note: $('noteInput').value.trim() });
-    save();
+    if (!Number.isSafeInteger(amount) || Math.abs(amount) > 2147483647) return toast('異動數量過大');
+    if (cloudEnabled) {
+      try { await window.InventoryCloud.mutate('adjust_stock', { materialId: item.id, amount, reason: $('reasonSelect').value, note: $('noteInput').value.trim() }); }
+      catch (error) { return toast(error.message); }
+    } else {
+      item.stock += amount;
+      transactions.push({ materialId: item.id, materialName: item.name, unit: unitOf(item), amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason: $('reasonSelect').value, note: $('noteInput').value.trim() });
+      save();
+    }
     closeAdjustment();
     render();
-    toast(isLow(item) ? `${item.name} 已異動，庫存低於警戒值` : '庫存異動已完成');
+    const updated = materials.find(candidate => candidate.id === item.id) || item;
+    toast(isLow(updated) ? `${updated.name} 已異動，庫存低於警戒值` : '庫存異動已完成');
   };
   $('closeStats').onclick = () => setView('home');
   $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; lowStockOnly = false; setView('materials'); resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
   $('notifyButton').onclick = () => toast('正式版將在低於警戒值時傳送 LINE 通知');
+  if (cloudEnabled) {
+    $('cloudPanel').classList.remove('hidden');
+    renderAccessControls();
+    document.querySelector('.bottom-note').textContent = '雲端模式：原裝置舊資料保留作為備份，不會自動匯入；LINE 通知尚未啟用。';
+    if (!window.InventoryCloud) {
+      $('cloudStatus').textContent = '雲端元件無法載入，請重新整理；尚未異動資料。';
+      return;
+    }
+    void window.InventoryCloud.start({
+      defaultLocations: LOCATIONS.slice(1),
+      applySnapshot(snapshot) {
+        materials = snapshot.materials;
+        transactions = snapshot.transactions;
+        customLocations = snapshot.locations;
+        renderLocationOptions();
+        if (!$('locationFilter').value) $('locationFilter').value = '全部位置';
+        render();
+      },
+      clearSnapshot() {
+        materials = []; transactions = []; customLocations = [];
+        closeAdjustment(); closeMaterialForm();
+        $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
+        renderLocationOptions(); render();
+      },
+      onStatus: renderAccessControls,
+      onRecovered() {
+        closeAdjustment(); closeMaterialForm(); $('locationModal').classList.add('hidden');
+        locationReturnToMaterial = false; toast('待處理操作已確認，沒有重複異動');
+      }
+    });
+  }
 }
 
 init();

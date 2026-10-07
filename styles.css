@@ -61,6 +61,17 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .eyebrow { font-size: 11px; margin-bottom: 8px; letter-spacing: .45px; font-weight: 400; }
 .page-subtitle { font-size: 12px; margin-top: 9px; }
+.cloud-panel { margin-top: 22px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; }
+.cloud-status { font-size: 13px; font-weight: 500; margin-top: 12px; }
+.cloud-detail { font-size: 12px; line-height: 1.7; margin-top: 8px; overflow-wrap: anywhere; }
+.cloud-login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: end; margin-top: 12px; }
+.cloud-login .field-label { margin: 0; }
+.cloud-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.cloud-account { flex: 1 1 100%; font-size: 12px; overflow-wrap: anywhere; }
+.cloud-import { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.cloud-import h3 { font-size: 14px; font-weight: 500; }
+.cloud-confirm { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.8; margin: 14px 0; }
+.cloud-confirm input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; accent-color: #000; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 43px; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 500; background: var(--surface); color: var(--ink); border: 1px solid var(--ink); }
 .primary-button:hover, .secondary-button:hover { background: var(--muted); }
 .new-material-button { white-space: nowrap; font-size: 12px; padding: 10px 13px; }
@@ -167,6 +178,9 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 }
 @media (max-width: 1160px) and (min-width: 680px) { .app-shell { margin: 22px 18px; } }
 @media (max-width: 679px) {
+  .cloud-login { grid-template-columns: 1fr; }
+  .cloud-login > button { justify-self: start; }
+  .cloud-panel { padding: 15px; }
   .app-shell { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
   .windowbar { min-height: 47px; padding: 0 18px; border-radius: 0; } .window-lights { display: none; }
   .app-layout { display: block; }
