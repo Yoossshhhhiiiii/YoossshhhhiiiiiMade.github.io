@@ -5,6 +5,7 @@
   const legacyKeys = ['inventory-materials', 'inventory-transactions', 'inventory-locations'];
   const prefix = `inventory-cloud-pending-v1:${config?.url || ''}:`;
   const maxInteger = 2147483647;
+  const usernamePattern = /^[a-z0-9][a-z0-9_-]{2,31}$/;
   const state = { mode: 'starting', session: null, snapshot: null, busy: false, pending: [], message: '', revision: -1 };
   let client;
   let hooks = {};
@@ -34,11 +35,41 @@
     if (known) return errors[known];
     if (error?.code === '23505') return '此位置或材料名稱已存在，沒有重複新增。';
     if (error?.code === 'PGRST202' || error?.code === '42P01') return '雲端資料庫尚未設定完成，請保留手機資料，暫勿匯入。';
-    if (error?.code === 'invalid_credentials') return 'Email 或密碼不正確，請重新輸入。';
+    if (error?.code === 'invalid_credentials') return '帳號或密碼不正確，請重新輸入。';
+    if (error?.code === 'over_request_rate_limit') return '登入嘗試過於頻繁，請稍後再試。';
     if (error?.code === 'email_not_confirmed') return '此帳號尚未確認，請聯絡管理員。';
     if (error?.code === '23514' || error?.code === '23502' || error?.code?.startsWith('22')) return '資料格式、數量或欄位長度不符；沒有儲存，請檢查資料。';
     if (error?.code === '42501') return '此帳號沒有庫存存取權限，請聯絡管理員。';
     return '連線失敗，請檢查網路後重試。';
+  }
+
+  function loginEmail(identifier) {
+    const account = identifier.trim().toLowerCase();
+    if (account.includes('@')) {
+      if (account.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account)) {
+        throw new Error('請輸入完整 Email，或 3–32 個英文字母、數字、底線或減號的自訂帳號。');
+      }
+      return account;
+    }
+    if (!usernamePattern.test(account)) {
+      throw new Error('自訂帳號需為 3–32 個英文字母、數字、底線或減號，並以英文字母或數字開頭。');
+    }
+    // This is only an identifier conversion. Supabase Auth verifies the password;
+    // the existing warehouse_members policy still decides inventory access.
+    if (!/^[a-z0-9]+\.warehouse\.invalid$/.test(config?.usernameDomain || '')) {
+      throw new Error('自訂帳號登入尚未設定完成，請使用原本的 Email 登入。');
+    }
+    return `${account}@${config.usernameDomain}`;
+  }
+
+  function accountLabel(user) {
+    const email = user?.email || '';
+    const suffix = config?.usernameDomain && `@${config.usernameDomain}`;
+    if (suffix && email.toLowerCase().endsWith(suffix)) {
+      const username = email.slice(0, -suffix.length).toLowerCase();
+      if (usernamePattern.test(username)) return username;
+    }
+    return email;
   }
 
   function rawLegacy() {
@@ -139,7 +170,7 @@
     if (!enabled || !el('cloudPanel')) return;
     const descriptions = {
       starting: ['正在準備雲端連線', '舊資料會保留，不會自動上傳或覆蓋。'],
-      'signed-out': ['請登入庫存管家', '登入後才能查看或修改雲端庫存。手機、電腦使用同一個帳號。'],
+      'signed-out': ['請登入庫存管家', '可使用經核准的 Email 或自訂帳號登入；手機、電腦共用同一份雲端庫存。'],
       loading: ['正在同步', '同步完成前暫停異動，避免使用過期庫存。'],
       setup: ['等待手機首次匯入', '請只在原本管理庫存的手機下載備份並確認匯入；電腦先不要匯入。'],
       ready: ['雲端已連線', '庫存、位置與異動紀錄由手機及電腦共用；每 15 秒及回到頁面時同步。'],
@@ -152,8 +183,9 @@
     el('cloudStatus').textContent = state.pending.length ? `有 ${state.pending.length} 筆操作需要確認` : title;
     el('cloudDetail').textContent = state.message || (state.pending.length ? '連線中斷可能發生在伺服器儲存後。請按「確認待處理操作」，系統不會重複扣庫存。' : detail);
     el('cloudLoginForm').classList.toggle('hidden', !!state.session);
+    el('cloudLoginHelp').classList.toggle('hidden', !!state.session);
     el('cloudSignedIn').classList.toggle('hidden', !state.session);
-    el('cloudAccount').textContent = state.session?.user.email || '';
+    el('cloudAccount').textContent = accountLabel(state.session?.user);
     el('cloudLoginButton').disabled = state.busy || !client;
     el('cloudLogoutButton').disabled = state.busy;
     el('cloudRefreshButton').disabled = state.busy || !state.session;
@@ -306,14 +338,18 @@
       if (!client || state.busy) return;
       state.busy = true; state.message = ''; publish();
       try {
+        const email = loginEmail(el('cloudEmail').value);
         const { data, error } = await client.auth.signInWithPassword({
-          email: el('cloudEmail').value.trim(), password: el('cloudPassword').value
+          email, password: el('cloudPassword').value
         });
         if (error) throw error;
         el('cloudPassword').value = '';
         state.busy = false;
         await acceptSession(data.session);
-      } catch (error) { state.message = errorText(error); }
+      } catch (error) {
+        state.message = error.message?.startsWith('請輸入完整 Email') || error.message?.startsWith('自訂帳號')
+          ? error.message : errorText(error);
+      }
       finally { state.busy = false; publish(); }
     });
     el('cloudLogoutButton').addEventListener('click', async () => {

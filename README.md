@@ -24,6 +24,23 @@
 - 每 15 秒、恢復網路、切回分頁與「重新同步」時更新資料。這是輪詢同步，不是即時 WebSocket。
 - 首次匯入一次完成材料、位置與歷史紀錄；歷史紀錄不會再次加減現有庫存。匯入失敗會回滾；雲端已有資料時拒絕再次覆蓋。
 
+## 額外的自訂帳號
+
+登入欄位同時接受原本的 Email 與管理員建立的自訂帳號。自訂帳號為 3–32 個英文字母、數字、底線或減號，以字母或數字開頭，不分大小寫；密碼完全保留原樣。
+
+Supabase 密碼驗證仍使用 Email 型態識別碼：前端將自訂帳號轉成 `<username>@<usernameDomain>`，`usernameDomain` 使用專案專屬、不可收信的 `*.warehouse.invalid` 保留網域。這是額外的獨立帳號，不是公開真實 Email 的查詢表，也不是替既有 Email 帳號新增別名。畫面登入後只顯示自訂名稱。
+
+建立順序：
+
+1. 在 Supabase Authentication 的 Add user → Create new user 建立對應的內部識別碼；只對這個由管理員建立的帳號使用 Auto confirm，不關閉全站 Email 確認設定。
+2. 由使用者親自輸入新密碼並提交；不要把密碼、service_role 或 secret 放到前端、SQL、Git 或聊天。
+3. 核對已建立的 Auth user UUID、內部識別碼與確認狀態。取得此帳號存取倉庫資料的明確同意後，透過私有 SQL 加入 `warehouse_members`，`can_import = false`。只建立 Auth user 並不會取得庫存權限。
+4. 用自訂名稱與剛設定的密碼登入，確認已授權帳號共用同一份庫存。原本的 Email 帳號和 RLS 不變。
+
+自訂帳號沒有收信信箱，不提供 Email 驗證、邀請或忘記密碼信；忘記密碼需由管理員核實身分後協助重設。不要對內部識別碼寄信或改成他人可能持有的真實網域。不提供公開註冊、自動授權或首次匯入權限。
+
+依據：[Supabase 密碼登入](https://supabase.com/docs/guides/auth/passwords)、[管理員建立帳號](https://supabase.com/docs/reference/javascript/auth-admin-createuser)。
+
 ## 驗證與限制
 
 安裝測試依賴後執行 `npm test`。測試使用 jsdom 與 PGlite（真正的 Postgres 引擎）驗證 RLS、直接寫入拒絕、未核准帳號、初次匯入、冪等重試、負庫存、資料編輯衝突與 UI 斷線保護。
