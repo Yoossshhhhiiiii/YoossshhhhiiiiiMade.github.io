@@ -62,6 +62,11 @@ test('Postgres security, atomic stock changes, retry identity and one-time phone
   assert.equal(data.materials.find(item => item.id === 3).alert, null);
   assert.equal(data.transactions[0].materialName, '舊名稱');
   assert.equal(data.transactions[0].note, '315');
+  const beforeUpgrade = structuredClone(data);
+  const upgrade = fs.readFileSync(path.join(__dirname, '../supabase/002-optional-fields-and-location-delete.sql'), 'utf8');
+  await db.exec(upgrade);
+  await db.exec(upgrade);
+  assert.deepEqual(await snapshot(owner), beforeUpgrade, 'Upgrade is repeatable and changes no stock, history, locations, revision or import rights');
   assert.equal((await mutate(4, 'import_phone', phone)).revision, data.revision, 'Import retry is a no-op');
   await assert.rejects(mutate(5, 'import_phone', phone), /WAREHOUSE_ALREADY_INITIALIZED/);
   await assert.rejects(as('authenticated', owner, () => db.query('update warehouse_materials set stock = 0')), { code: '42501' });
@@ -88,6 +93,49 @@ test('Postgres security, atomic stock changes, retry identity and one-time phone
   data = await mutate(15, 'adjust_stock', { ...adjustment, amount: -4 });
   assert.equal(data.materials.find(item => item.id === 7).stock, 0, 'Separate devices deduct against current server stock');
   await assert.rejects(mutate(16, 'adjust_stock', adjustment), /WAREHOUSE_INSUFFICIENT_STOCK/);
+  await assert.rejects(as('anon', null, () => db.query('select warehouse_mutate($1,$2,$3::jsonb)', [requestId(20), 'delete_location', '{"name":"1樓"}'])), { code: '42501' });
+  await assert.rejects(mutate(20, 'delete_location', { name: '1樓' }, other), /WAREHOUSE_ACCESS_DENIED/);
+  await assert.rejects(as('authenticated', owner, () => db.query("delete from warehouse_locations where name='1樓'")), { code: '42501' });
+  const beforeOccupiedDelete = await snapshot(owner);
+  await assert.rejects(mutate(21, 'delete_location', { name: '3樓315' }), /WAREHOUSE_LOCATION_IN_USE/);
+  assert.deepEqual(await snapshot(owner), beforeOccupiedDelete, 'Zero-stock materials still protect their location; failed delete changes nothing');
+
+  await db.query('insert into warehouse_members(user_id, can_import) values ($1, false)', [other]);
+  await assert.rejects(mutate(22, 'import_phone', phone, other), /WAREHOUSE_IMPORT_NOT_ALLOWED/);
+  let nextRequest = 23;
+  for (const [category, unit, expected] of [['', '', '／'], ['規格', '', '規格／'], ['', '個', '／個'], [null, null, '／'], [undefined, undefined, '／']]) {
+    const payload = { id: null, name: `選填材料${nextRequest}`, category, unit, stock: 4, alert: 1, location: '1樓', detail: '' };
+    data = await mutate(nextRequest++, 'save_material', payload, other);
+    assert.equal(data.materials.find(item => item.name === payload.name).spec, expected);
+  }
+  const optionalItem = data.materials.find(item => item.name.startsWith('選填材料'));
+  data = await mutate(nextRequest++, 'save_material', { id: optionalItem.id, version: optionalItem.version, name: optionalItem.name, category: '', unit: '', stock: 999, alert: 1, location: '1樓', detail: '' }, other);
+  assert.equal(data.materials.find(item => item.id === optionalItem.id).stock, 4, 'Optional metadata edit never rewrites stock');
+  data = await mutate(nextRequest++, 'adjust_stock', { materialId: optionalItem.id, amount: -1, reason: '維修使用', note: '315' }, other);
+  assert.equal(data.transactions.at(-1).unit, '', 'No inferred unit when omitted');
+  const valid = { id: null, name: '邊界材料', stock: 0, alert: 0, location: '1樓', detail: '' };
+  for (const invalid of [{ category: 'a'.repeat(81) }, { unit: 'a'.repeat(21) }, { category: [] }, { unit: 123 }, { name: '' }, { alert: null }]) {
+    await assert.rejects(mutate(nextRequest++, 'save_material', { ...valid, ...invalid }), /WAREHOUSE_INVALID_INPUT/);
+  }
+  for (const name of ['', '全部位置', 123, [], 'a'.repeat(41)]) {
+    await assert.rejects(mutate(nextRequest++, 'delete_location', { name }), /WAREHOUSE_INVALID_INPUT/);
+  }
+  await assert.rejects(mutate(nextRequest++, 'delete_location', { name: '不存在的位置' }), /WAREHOUSE_LOCATION_NOT_FOUND/);
+  data = await mutate(nextRequest++, 'add_location', { name: '12樓東' });
+  const beforeEmptyDelete = structuredClone(data);
+  const deleteRequest = nextRequest++;
+  data = await mutate(deleteRequest, 'delete_location', { name: '12樓東' }, other);
+  assert(!data.locations.includes('12樓東'));
+  assert.deepEqual(data.materials, beforeEmptyDelete.materials);
+  assert.deepEqual(data.transactions, beforeEmptyDelete.transactions);
+  assert.equal((await mutate(deleteRequest, 'delete_location', { name: '12樓東' }, other)).revision, data.revision, 'Deletion retry applies once');
+  await assert.rejects(mutate(nextRequest++, 'save_material', { ...valid, location: '12樓東' }), { code: '23503' });
+  await mutate(nextRequest++, 'add_location', { name: '12樓東' });
+  data = await mutate(deleteRequest, 'delete_location', { name: '12樓東' }, other);
+  assert(data.locations.includes('12樓東'), 'An old delete retry cannot delete a newly recreated location');
+  await mutate(nextRequest++, 'save_material', { ...valid, location: '12樓東' }, other);
+  await assert.rejects(mutate(nextRequest++, 'delete_location', { name: '12樓東' }), /WAREHOUSE_LOCATION_IN_USE/, 'Another device adding material after a stale preview blocks deletion');
+  assert.equal((await snapshot(other)).canImport, false, 'Location management grants no import permission');
   await db.query('delete from warehouse_members where user_id = $1', [owner]);
   await assert.rejects(snapshot(owner), /WAREHOUSE_ACCESS_DENIED/);
   await db.close();

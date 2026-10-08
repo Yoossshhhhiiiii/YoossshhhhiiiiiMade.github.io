@@ -57,7 +57,15 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
           } else if (params.p_operation === 'import_phone') {
             server = { ...payload, canImport: true, initialized: true, revision: server.revision, materials: payload.materials.map(item => ({ ...item, version: 1 })) };
           } else if (params.p_operation === 'add_location') server.locations.push(payload.name);
-          else if (params.p_operation === 'save_material') server.materials.push({ id: 2, name: payload.name, spec: `${payload.category}／${payload.unit}`, stock: payload.stock, alert: payload.alert, location: payload.location, detail: payload.detail, version: 1 });
+          else if (params.p_operation === 'delete_location') {
+            if (server.materials.some(item => item.location === payload.name)) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_LOCATION_IN_USE' } };
+            server.locations = server.locations.filter(name => name !== payload.name);
+          } else if (params.p_operation === 'save_material') {
+            const item = server.materials.find(item => item.id === payload.id);
+            const metadata = { name: payload.name, spec: `${payload.category}／${payload.unit}`, alert: payload.alert, location: payload.location, detail: payload.detail };
+            if (item) Object.assign(item, metadata, { version: item.version + 1 });
+            else server.materials.push({ id: Math.max(0, ...server.materials.map(item => item.id)) + 1, ...metadata, stock: payload.stock, version: 1 });
+          }
           server.revision++; ledger.set(params.p_request_id, true);
         }
       }
@@ -82,6 +90,8 @@ test('Cloud mode preserves original device data, blocks signed-out edits, handle
   const a = setup({ authenticated: false }); await tick();
   assert.equal(a.q('#materialCount').textContent, '0');
   assert(a.q('#newMaterialButton').disabled);
+  assert(a.q('#deleteLocationFromFilter').disabled);
+  assert(a.q('#confirmDeleteLocation').disabled);
   assert(!a.q('#cloudLoginForm').classList.contains('hidden'));
   a.click('#backupDeviceButton'); assert.equal(a.downloads.length, 1); a.assertLegacy(); a.w.close();
   const b = setup({ sdk: false }); await tick();
@@ -257,6 +267,125 @@ test('Cloud location and material forms retain optional detail, pagination, room
   assert.equal(a.q('#noteInput').placeholder, '可輸入寢室號碼');
   a.change('#statsStartDate', '2026-12-31'); a.change('#statsEndDate', '2026-01-01'); assert(!a.q('#statsRangeError').classList.contains('hidden'));
   a.assertLegacy(); a.w.close();
+});
+
+test('Both optional material fields can be omitted on create and edit, without inventing a unit or changing stock', async () => {
+  const a = setup(); await tick();
+  assert.equal(a.q('#materialCategory').required, false);
+  assert.equal(a.q('#materialUnit').required, false);
+  assert.match(a.q('label[for="materialCategory"]').textContent, /選填/);
+  assert.match(a.q('label[for="materialUnit"]').textContent, /選填/);
+  for (const [category, unit] of [['', ''], ['規格', ''], ['', '個']]) {
+    a.click('#newMaterialButton');
+    a.change('#materialName', `選填-${category}-${unit}`);
+    a.change('#materialCategory', category); a.change('#materialUnit', unit);
+    a.change('#materialStock', '3'); a.change('#materialAlert', '0');
+    a.q('#materialForm').requestSubmit(); await tick();
+    assert(a.q('#materialModal').classList.contains('hidden'));
+    assert.equal(a.calls.filter(call => call.params?.p_operation === 'save_material').at(-1).params.p_payload.unit, unit);
+  }
+  a.click('[data-action="edit"]'); a.change('#materialCategory', ''); a.change('#materialUnit', '');
+  a.q('#materialForm').requestSubmit(); await tick();
+  assert.equal(a.server().materials[0].spec, '／'); assert.equal(a.server().materials[0].stock, 12);
+  a.click('#newMaterialButton'); a.change('#materialName', ''); a.q('#materialForm').requestSubmit(); await tick();
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'save_material').length, 4, 'Name remains required');
+  a.assertLegacy(); a.w.close();
+});
+
+test('Cloud locations are authoritative; empty deletion needs confirmation and preserves materials and history', async () => {
+  const a = setup(); await tick();
+  for (const suffix of ['Filter', 'Page']) {
+    assert.equal(a.q(`#addLocationFrom${suffix}`).textContent, '增加＋');
+    assert.equal(a.q(`#deleteLocationFrom${suffix}`).textContent, '刪除X');
+  }
+  assert(![...a.q('#locationFilter').options].some(option => option.value === '12樓西'), 'Absent default floors cannot be re-added by the client');
+  a.server().locations.push('12樓東'); await a.w.InventoryCloud.refresh();
+  a.change('#locationFilter', '12樓東'); a.click('#deleteLocationFromFilter');
+  assert.equal(a.q('#deleteLocationSelect').value, '12樓東'); assert(!a.q('#confirmDeleteLocation').disabled);
+  assert.match(a.q('#deleteLocationSummary').textContent, /不會刪除材料/);
+  a.click('#deleteLocationModal [data-close-delete-location-modal]');
+  assert(!a.calls.some(call => call.params?.p_operation === 'delete_location'), 'Cancel never sends a delete request');
+  a.click('#deleteLocationFromFilter');
+  const beforeMaterials = structuredClone(a.server().materials), beforeHistory = structuredClone(a.server().transactions);
+  a.q('#deleteLocationForm').requestSubmit(); await tick();
+  assert(a.q('#deleteLocationModal').classList.contains('hidden'));
+  assert.equal(a.q('#locationFilter').value, '全部位置');
+  assert(![...a.q('#materialLocation').options].some(option => option.value === '12樓東'));
+  assert.deepEqual(a.server().materials, beforeMaterials); assert.deepEqual(a.server().transactions, beforeHistory);
+  await a.w.InventoryCloud.refresh();
+  assert(![...a.q('#locationFilter').options].some(option => option.value === '12樓東'), 'Deleted defaults stay deleted after syncing');
+  a.click('[data-view="locations"]'); a.click('#deleteLocationFromPage');
+  assert(a.q('#confirmDeleteLocation').disabled, 'All-locations mode needs an explicit selection');
+  a.change('#deleteLocationSelect', '3樓315'); assert(a.q('#confirmDeleteLocation').disabled);
+  assert.match(a.q('#deleteLocationSummary').textContent, /仍有 1 項材料/);
+  a.server().materials[0].stock = 0; await a.w.InventoryCloud.refresh();
+  assert(a.q('#confirmDeleteLocation').disabled, 'A zero-stock material still occupies its location');
+  a.q('#deleteLocationForm').dispatchEvent(new a.w.Event('submit', { bubbles: true, cancelable: true })); await tick();
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'delete_location').length, 1);
+  a.assertLegacy(); a.w.close();
+});
+
+test('A location removed by another device never silently relocates an unsaved material', async () => {
+  const a = setup(); await tick();
+  a.server().locations.push('2樓201'); await a.w.InventoryCloud.refresh();
+  a.click('#newMaterialButton'); a.change('#materialName', '尚未儲存材料'); a.change('#materialLocation', '2樓201');
+  a.server().locations = a.server().locations.filter(name => name !== '2樓201'); await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#materialLocation').value, '', 'Removed choice requires a new explicit selection');
+  await a.w.InventoryCloud.refresh(); assert.equal(a.q('#materialLocation').value, '');
+  a.q('#materialForm').requestSubmit(); await tick();
+  assert(!a.calls.some(call => call.params?.p_operation === 'save_material'));
+  a.change('#materialLocation', '3樓315'); a.q('#materialForm').requestSubmit(); await tick();
+  assert.equal(a.calls.find(call => call.params?.p_operation === 'save_material').params.p_payload.location, '3樓315');
+  a.assertLegacy(); a.w.close();
+});
+
+test('Location deletion handles other-device occupancy, lost responses and sign-out without unsafe local fallback', async () => {
+  const a = setup(); await tick();
+  a.server().locations.push('2樓201'); await a.w.InventoryCloud.refresh();
+  a.change('#locationFilter', '2樓201'); a.click('#deleteLocationFromFilter');
+  a.server().materials.push({ ...a.server().materials[0], id: 2, location: '2樓201' });
+  a.q('#deleteLocationForm').requestSubmit(); await tick();
+  assert.match(a.q('#toast').textContent, /仍有材料/); assert(a.server().locations.includes('2樓201'));
+  assert(a.q('#deleteLocationModal').classList.contains('hidden') === false);
+  await a.w.InventoryCloud.refresh(); assert(a.q('#confirmDeleteLocation').disabled);
+  a.callback(null); await new Promise(resolve => setTimeout(resolve, 5));
+  assert(a.q('#deleteLocationModal').classList.contains('hidden')); assert(a.q('#deleteLocationFromFilter').disabled);
+  a.assertLegacy(); a.w.close();
+
+  const b = setup(); await tick();
+  b.server().locations.push('2樓201'); await b.w.InventoryCloud.refresh();
+  b.change('#locationFilter', '2樓201'); b.click('#deleteLocationFromFilter');
+  b.handler(async (name, params) => {
+    if (name === 'warehouse_mutate') { b.server().locations = b.server().locations.filter(name => name !== params.p_payload.name); b.server().revision++; return { data: null, error: { message: 'Failed to fetch', code: '' } }; }
+    return { data: structuredClone(b.server()), error: null };
+  });
+  b.q('#deleteLocationForm').requestSubmit(); await tick();
+  const request = b.calls.find(call => call.params?.p_operation === 'delete_location');
+  assert(b.q('#confirmDeleteLocation').disabled); assert(b.q('#deleteLocationFromFilter').disabled);
+  b.handler(async () => ({ data: structuredClone(b.server()), error: null }));
+  b.click('#cloudRetryButton'); await tick();
+  assert.equal(b.calls.filter(call => call.params?.p_operation === 'delete_location').at(-1).params.p_request_id, request.params.p_request_id);
+  assert(b.q('#deleteLocationModal').classList.contains('hidden'));
+  assert.equal(b.q('#locationFilter').value, '全部位置'); b.assertLegacy(); b.w.close();
+});
+
+test('Local-only preview allows empty optional fields and retains removed defaults across reloads', async () => {
+  const dom = new JSDOM(html, { url: 'http://127.0.0.1:8890/preview/', runScripts: 'outside-only' });
+  const w = dom.window; w.INVENTORY_CLOUD_CONFIG = { enabled: false }; w.eval(app);
+  const q = selector => w.document.querySelector(selector);
+  q('#newMaterialButton').click(); q('#materialName').value = '本機選填材料'; q('#materialStock').value = '3'; q('#materialAlert').value = '0';
+  q('#materialForm').requestSubmit();
+  assert.equal(JSON.parse(w.localStorage.getItem('inventory-materials')).find(item => item.name === '本機選填材料').spec, '／');
+  q('#locationFilter').value = '12樓東'; q('#deleteLocationFromFilter').click(); q('#deleteLocationForm').requestSubmit();
+  assert(![...q('#locationFilter').options].some(option => option.value === '12樓東'));
+  const reload = new JSDOM(html, { url: 'http://127.0.0.1:8890/preview/', runScripts: 'outside-only' });
+  for (let i = 0; i < w.localStorage.length; i++) { const key = w.localStorage.key(i); reload.window.localStorage.setItem(key, w.localStorage.getItem(key)); }
+  reload.window.INVENTORY_CLOUD_CONFIG = { enabled: false }; reload.window.eval(app);
+  const doc = reload.window.document;
+  assert(![...doc.querySelector('#locationFilter').options].some(option => option.value === '12樓東'));
+  doc.querySelector('#addLocationFromFilter').click(); doc.querySelector('#newLocationName').value = '12樓東'; doc.querySelector('#locationForm').requestSubmit();
+  assert([...doc.querySelector('#locationFilter').options].some(option => option.value === '12樓東'));
+  dom.window.close(); reload.window.close();
 });
 
 test('Signing out in another tab during an in-flight write never restores private cloud data', async () => {
