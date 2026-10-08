@@ -94,6 +94,10 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .select-box select { padding: 8px 0; font-size: 12px; width: 100%; border: 0; }
 .location-filter-group { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .location-filter-group .select-box { flex: 1; }
+.location-actions { display: inline-flex; flex-shrink: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.location-actions .add-location-button { border: 0; border-radius: 0; min-width: 44px; min-height: 44px; }
+.location-actions .add-location-button + .add-location-button { border-left: 1px solid var(--line); }
+.location-actions .add-location-button:focus-visible { outline-offset: -3px; }
 .add-location-button, .filter-button { border: 1px solid var(--line); border-radius: 9px; min-height: 40px; padding: 0 9px; font-size: 11px; white-space: nowrap; }
 .add-location-button:hover, .filter-button:hover { background: var(--muted); }
 .filter-button[aria-pressed="true"] { border-color: var(--ink); background: var(--selected); }
@@ -166,6 +170,7 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .field-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 23px; }
 .form-hint { font-size: 11px; line-height: 1.7; }
+.delete-location-summary { min-height: 38px; overflow-wrap: anywhere; }
 .toast { position: fixed; z-index: 7; bottom: 25px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; border: 1px solid var(--ink); border-radius: 10px; background: var(--surface); color: var(--ink); box-shadow: 0 5px 25px #0000000f; font-size: 12px; text-align: center; }
 @media (min-width: 680px) and (max-width: 950px) {
   .app-layout { grid-template-columns: 154px minmax(0, 1fr); }

@@ -56,11 +56,13 @@ const storedMaterials = localStorage.getItem('inventory-materials');
 let materials = cloudEnabled ? [] : storedMaterials ? JSON.parse(storedMaterials) : seed;
 let transactions = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-transactions') || '[]');
 let customLocations = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-locations') || '[]');
+let removedLocations = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-deleted-locations') || '[]');
 let activeMaterial = null;
 let editingMaterialId = null;
 let editingMaterialVersion = null;
 let locationReturnToMaterial = false;
 let locationReturnView = 'home';
+let deleteLocationReturnButton = 'deleteLocationFromFilter';
 let step = 1;
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
@@ -100,6 +102,11 @@ function renderAccessControls() {
   for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'saveMaterialButton', 'confirmAdjustment', 'saveLocationButton']) {
     if ($(id)) $(id).disabled = disabled;
   }
+  for (const id of ['deleteLocationFromFilter', 'deleteLocationFromPage']) {
+    $(id).disabled = disabled || allLocations().length === 0;
+  }
+  $('deleteLocationSelect').disabled = disabled;
+  renderDeleteLocationState();
   document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
 }
 
@@ -162,17 +169,24 @@ function renderToday() {
 }
 
 function allLocations() {
-  return [...new Set([...LOCATIONS.slice(1), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean);
+  // Cloud is authoritative: deleted default floors must not be silently re-added.
+  if (cloudEnabled) return customLocations.slice();
+  return [...new Set([...LOCATIONS.slice(1).filter(name => !removedLocations.includes(name)), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean);
 }
 
 function renderLocationOptions() {
   const selectedFilter = $('locationFilter').value || '全部位置';
-  const selectedMaterial = $('materialLocation').value || '12樓西';
+  const selectedMaterial = $('materialLocation').value;
+  const selectedDelete = $('deleteLocationSelect').value;
   const locations = allLocations();
   $('locationFilter').replaceChildren(...['全部位置', ...locations].map(location => new Option(location, location)));
   $('materialLocation').replaceChildren(...locations.map(location => new Option(location, location)));
-  $('locationFilter').value = selectedFilter;
-  $('materialLocation').value = selectedMaterial;
+  $('locationFilter').value = locations.includes(selectedFilter) ? selectedFilter : '全部位置';
+  $('materialLocation').value = locations.includes(selectedMaterial) ? selectedMaterial
+    : $('materialModal').classList.contains('hidden') ? locations[0] || '' : '';
+  $('deleteLocationSelect').replaceChildren(new Option('請選擇位置', ''), ...locations.map(name => new Option(`${name}（${materials.filter(item => item.location === name).length} 項材料）`, name)));
+  $('deleteLocationSelect').value = locations.includes(selectedDelete) ? selectedDelete : '';
+  renderDeleteLocationState();
 }
 
 function renderWarehouseLocations() {
@@ -350,9 +364,9 @@ function openMaterialForm(item = null) {
   $('materialStock').value = item?.stock ?? 0;
   $('materialAlert').value = item?.alert ?? 5;
   $('materialAlertEdit').value = item ? item.alert ?? '' : 5;
-  $('materialLocation').value = item?.location ?? '12樓西';
+  $('materialLocation').value = item?.location ?? (allLocations().includes('12樓西') ? '12樓西' : allLocations()[0] || '');
   $('materialDetail').value = item?.detail ?? '';
-  $('materialFormHint').textContent = item?.alert == null && item ? '請補上分類、單位和警戒值；庫存數量請使用 ＋ 或 − 調整。' : item ? '庫存數量請使用材料清單上的 ＋ 或 − 調整。' : '庫存與警戒值請填入 0 或正整數。';
+  $('materialFormHint').textContent = item?.alert == null && item ? '請設定警戒值；分類／規格、單位與詳細位置可留空。庫存數量請使用 ＋ 或 − 調整。' : item ? '分類／規格、單位與詳細位置可留空；庫存數量請使用 ＋ 或 − 調整。' : '分類／規格、單位與詳細位置可留空；庫存與警戒值請填入 0 或正整數。';
   $('materialModal').classList.remove('hidden');
   $('materialName').focus();
 }
@@ -399,7 +413,9 @@ async function saveLocationFromForm(event) {
     catch (error) { return toast(error.message); }
   } else {
     customLocations.push(name);
+    removedLocations = removedLocations.filter(location => location.toLowerCase() !== name.toLowerCase());
     localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
+    localStorage.setItem('inventory-deleted-locations', JSON.stringify(removedLocations));
   }
   renderLocationOptions();
   if (fromMaterial) $('materialLocation').value = name;
@@ -413,6 +429,56 @@ async function saveLocationFromForm(event) {
     resetMaterialPage();
   }
   toast('新位置已加入選單');
+}
+
+function renderDeleteLocationState() {
+  const name = $('deleteLocationSelect').value;
+  const count = materials.filter(item => item.location === name).length;
+  $('deleteLocationSummary').textContent = !name ? '只有沒有材料的位置可以刪除。刪除後會從所有位置選單移除。'
+    : count ? `「${name}」仍有 ${count} 項材料，不能刪除。請先編輯材料，將它們移到其他位置。`
+    : `確定刪除「${name}」？此位置沒有材料；不會刪除材料、庫存或異動紀錄。需要時可重新增加同名位置。`;
+  $('confirmDeleteLocation').disabled = !canModifyInventory() || !name || count > 0 || !allLocations().includes(name);
+}
+
+function openDeleteLocationForm(fromPage = false) {
+  if (!canModifyInventory()) return toast('請先登入並完成雲端同步');
+  deleteLocationReturnButton = fromPage ? 'deleteLocationFromPage' : 'deleteLocationFromFilter';
+  renderLocationOptions();
+  const selected = $('locationFilter').value;
+  $('deleteLocationSelect').value = !fromPage && allLocations().includes(selected) ? selected : '';
+  renderDeleteLocationState();
+  $('deleteLocationModal').classList.remove('hidden');
+  $('deleteLocationSelect').focus();
+}
+
+function closeDeleteLocationForm() {
+  $('deleteLocationModal').classList.add('hidden');
+  const trigger = $(deleteLocationReturnButton);
+  (trigger.disabled ? $('locationFilter') : trigger).focus();
+}
+
+async function deleteLocationFromForm(event) {
+  event.preventDefault();
+  if (!canModifyInventory()) return toast('目前無法刪除，請先完成雲端同步');
+  const name = $('deleteLocationSelect').value;
+  if (!name || !allLocations().includes(name)) return toast('請選擇要刪除的位置');
+  if (materials.some(item => item.location === name)) {
+    renderDeleteLocationState();
+    return toast('此位置仍有材料，請先將材料移到其他位置');
+  }
+  if (cloudEnabled) {
+    try { await window.InventoryCloud.mutate('delete_location', { name }); }
+    catch (error) { return toast(error.message); }
+  } else {
+    customLocations = customLocations.filter(location => location !== name);
+    removedLocations = [...new Set([...removedLocations, name])];
+    localStorage.setItem('inventory-locations', JSON.stringify(customLocations));
+    localStorage.setItem('inventory-deleted-locations', JSON.stringify(removedLocations));
+  }
+  renderLocationOptions();
+  resetMaterialPage();
+  closeDeleteLocationForm();
+  toast(`位置「${name}」已刪除，材料與異動紀錄保留`);
 }
 
 function toast(message) {
@@ -435,7 +501,7 @@ async function saveMaterialFromForm(event) {
   const stock = Number($('materialStock').value);
   const alert = Number(editing ? $('materialAlertEdit').value : $('materialAlert').value);
 
-  if (!name || !category || !unit || !location) return toast('請填寫所有必填欄位');
+  if (!name || !location) return toast('請填寫所有必填欄位');
   if ((!editing && (!Number.isSafeInteger(stock) || stock < 0)) || !Number.isSafeInteger(alert) || alert < 0) {
     return toast('庫存與警戒值須為 0 或正整數');
   }
@@ -476,6 +542,7 @@ function init() {
   $('lowStockToggle').addEventListener('click', () => toggleLowStock());
   $('lowStockFilter').addEventListener('click', () => toggleLowStock(true));
   $('addLocationFromPage').addEventListener('click', () => openLocationForm());
+  $('deleteLocationFromPage').addEventListener('click', () => openDeleteLocationForm(true));
   $('warehouseLocations').addEventListener('click', event => {
     const button = event.target.closest('[data-location]');
     if (!button) return;
@@ -492,10 +559,14 @@ function init() {
   $('nextMaterialsPage').addEventListener('click', () => changeMaterialPage(1));
   $('newMaterialButton').addEventListener('click', () => openMaterialForm());
   $('addLocationFromFilter').addEventListener('click', () => openLocationForm());
+  $('deleteLocationFromFilter').addEventListener('click', () => openDeleteLocationForm());
+  $('deleteLocationSelect').addEventListener('change', renderDeleteLocationState);
+  $('deleteLocationForm').addEventListener('submit', deleteLocationFromForm);
   $('addLocationFromForm').addEventListener('click', () => openLocationForm(true));
   $('locationForm').addEventListener('submit', saveLocationFromForm);
   $('materialForm').addEventListener('submit', saveMaterialFromForm);
   document.querySelectorAll('[data-close-location-modal]').forEach(button => button.addEventListener('click', closeLocationForm));
+  document.querySelectorAll('[data-close-delete-location-modal]').forEach(button => button.addEventListener('click', closeDeleteLocationForm));
   document.querySelectorAll('[data-close-material-modal]').forEach(button => button.addEventListener('click', closeMaterialForm));
   document.querySelectorAll('[data-close-modal]').forEach(button => button.addEventListener('click', closeAdjustment));
   document.addEventListener('keydown', event => {
@@ -515,7 +586,8 @@ function init() {
       return;
     }
     if (event.key !== 'Escape') return;
-    if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
+    if (!$('deleteLocationModal').classList.contains('hidden')) closeDeleteLocationForm();
+    else if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
     else { closeMaterialForm(); closeAdjustment(); }
   });
   $('materialList').addEventListener('click', event => {
@@ -574,11 +646,13 @@ function init() {
         materials = []; transactions = []; customLocations = [];
         closeAdjustment(); closeMaterialForm();
         $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
+        $('deleteLocationModal').classList.add('hidden');
         renderLocationOptions(); render();
       },
       onStatus: renderAccessControls,
       onRecovered() {
         closeAdjustment(); closeMaterialForm(); $('locationModal').classList.add('hidden');
+        $('deleteLocationModal').classList.add('hidden');
         locationReturnToMaterial = false; toast('待處理操作已確認，沒有重複異動');
       }
     });

@@ -23,6 +23,8 @@
     WAREHOUSE_EDIT_CONFLICT: '這筆材料已在其他裝置更新。請關閉表單、重新同步後再編輯。',
     WAREHOUSE_NOT_INITIALIZED: '請先由原本的手機完成首次匯入。',
     WAREHOUSE_MATERIAL_NOT_FOUND: '找不到這筆雲端材料，請重新同步。',
+    WAREHOUSE_LOCATION_IN_USE: '此位置仍有材料，不能刪除。請先編輯材料，移到其他位置。',
+    WAREHOUSE_LOCATION_NOT_FOUND: '此位置已不存在，請重新同步。',
     WAREHOUSE_REQUEST_CONFLICT: '待確認操作與原紀錄不一致，請聯絡管理員；沒有再次異動。',
     WAREHOUSE_INVALID_INPUT: '欄位或數量不符合要求，請檢查後再送出。',
     WAREHOUSE_INVALID_IMPORT: '手機資料格式不符，請保留備份並聯絡管理員。',
