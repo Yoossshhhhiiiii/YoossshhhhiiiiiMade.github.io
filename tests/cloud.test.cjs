@@ -13,7 +13,8 @@ const phone = { materials: [{ id: 1, name: '手機材料', spec: '管件／個',
   transactions: [{ materialId: 1, materialName: '手機材料', unit: '個', amount: 1, type: '減少', time: new Date().toISOString(), reason: '維修使用', note: '315' }], locations: ['3樓315'] };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function setup({ authenticated = true, initialized = true, sdk = true, legacy = phone } = {}) {
+function setup({ authenticated = true, initialized = true, sdk = true, legacy = phone,
+  accountSession = session, authError = null, configOverride = null } = {}) {
   const dom = new JSDOM(html, { url: 'https://yoossshhhhiiiii.github.io/YoossshhhhiiiiiMade.github.io/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.HTMLElement.prototype.scrollIntoView = () => {};
@@ -31,12 +32,16 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
   let callback;
   let handler;
   const calls = [];
+  const authCalls = [];
   const ledger = new Map();
   const client = {
     auth: {
-      getSession: async () => ({ data: { session: authenticated ? session : null }, error: null }),
+      getSession: async () => ({ data: { session: authenticated ? accountSession : null }, error: null }),
       onAuthStateChange: cb => { callback = cb; },
-      signInWithPassword: async () => ({ data: { session }, error: null }),
+      signInWithPassword: async credentials => {
+        authCalls.push(credentials);
+        return { data: { session: authError ? null : accountSession }, error: authError };
+      },
       signOut: async () => ({ error: null })
     },
     rpc: async (name, params) => {
@@ -60,14 +65,16 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
     }
   };
   if (sdk) w.supabase = { createClient: () => client };
-  w.eval(cloudConfig); w.eval(cloud); w.eval(app);
+  w.eval(cloudConfig);
+  if (configOverride) w.INVENTORY_CLOUD_CONFIG = { ...w.INVENTORY_CLOUD_CONFIG, ...configOverride };
+  w.eval(cloud); w.eval(app);
   const q = selector => w.document.querySelector(selector);
   const click = selector => { assert(q(selector), selector); q(selector).click(); };
   const change = (selector, value, type = 'change') => {
     q(selector).value = value; q(selector).dispatchEvent(new w.Event(type, { bubbles: true }));
   };
   const assertLegacy = () => { for (const [key, value] of Object.entries(raw)) assert.equal(w.localStorage.getItem(key), value, 'Cloud mode must not overwrite legacy data'); };
-  return { dom, w, q, click, change, calls, downloads, assertLegacy,
+  return { dom, w, q, click, change, calls, authCalls, downloads, assertLegacy,
     handler: value => { handler = value; }, server: () => server, callback: value => callback('SIGNED_OUT', value) };
 }
 
@@ -80,6 +87,67 @@ test('Cloud mode preserves original device data, blocks signed-out edits, handle
   const b = setup({ sdk: false }); await tick();
   assert(b.q('#newMaterialButton').disabled); assert(b.q('#cloudLoginButton').disabled);
   b.click('#backupDeviceButton'); assert.equal(b.downloads.length, 1); b.assertLegacy(); b.w.close();
+});
+
+test('Email login remains compatible and username login uses Auth, not a password lookup or new access grant', async () => {
+  const email = setup({ authenticated: false }); await tick();
+  email.change('#cloudEmail', ' Owner@Example.Test '); email.change('#cloudPassword', ' fixture password ');
+  email.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.equal(email.authCalls.length, 1);
+  assert.equal(email.authCalls[0].email, 'owner@example.test');
+  assert.equal(email.authCalls[0].password, ' fixture password ', 'Passwords must not be trimmed or normalized');
+  assert.equal(email.q('#cloudAccount').textContent, 'owner@example.test');
+  assert.equal(email.q('#cloudPassword').value, ''); email.assertLegacy(); email.w.close();
+
+  const internalEmail = 'ntnu7@nhunrezwvfwqqappdqij.warehouse.invalid';
+  const a = setup({ authenticated: false, accountSession: { user: { ...session.user, email: internalEmail } } }); await tick();
+  a.server().canImport = false;
+  a.change('#cloudEmail', ' NTNU7 '); a.change('#cloudPassword', 'fixture-password');
+  a.q('#cloudLoginForm').requestSubmit(); a.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.equal(a.authCalls.length, 1, 'Cannot submit concurrent logins');
+  assert.equal(a.authCalls[0].email, internalEmail);
+  assert.equal(a.q('#cloudAccount').textContent, 'ntnu7');
+  assert.equal(a.q('#cloudEmail').type, 'text', 'Native email validation must not block usernames');
+  assert(a.q('#cloudLoginHelp').classList.contains('hidden'));
+  assert(!a.calls.some(call => call.name === 'warehouse_mutate'), 'Login cannot import or change inventory');
+  assert(a.q('#cloudImportPanel').classList.contains('hidden')); a.assertLegacy(); a.w.close();
+
+  const restored = setup({ accountSession: { user: { ...session.user, email: internalEmail } } }); await tick();
+  assert.equal(restored.q('#cloudAccount').textContent, 'ntnu7', 'Restored sessions display the same username'); restored.w.close();
+});
+
+test('Invalid usernames and broken username configuration never send credentials, while Email still works', async () => {
+  const a = setup({ authenticated: false }); await tick();
+  a.change('#cloudPassword', 'fixture-password');
+  for (const account of ['ab', '中文帳號', 'staff 01', '-staff', '<script>', 'a'.repeat(33), 'staff@invalid', '   ']) {
+    a.change('#cloudEmail', account); a.q('#cloudLoginForm').requestSubmit(); await tick();
+    assert.equal(a.authCalls.length, 0, account);
+    assert(!a.q('#cloudLoginButton').disabled); assert(a.q('#newMaterialButton').disabled);
+  }
+  a.assertLegacy(); a.w.close();
+  const b = setup({ authenticated: false, configOverride: { usernameDomain: 'someone-elses-domain.example' } }); await tick();
+  b.change('#cloudEmail', 'ntnu7'); b.change('#cloudPassword', 'fixture-password'); b.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.equal(b.authCalls.length, 0); assert.match(b.q('#cloudDetail').textContent, /尚未設定完成/);
+  b.change('#cloudEmail', 'owner@example.test'); b.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.equal(b.authCalls.length, 1); b.assertLegacy(); b.w.close();
+});
+
+test('Username authentication failure and an unapproved username cannot reveal inventory or self-authorize', async () => {
+  const a = setup({ authenticated: false, authError: { code: 'invalid_credentials', message: 'Invalid login credentials' } }); await tick();
+  a.change('#cloudEmail', 'ntnu7'); a.change('#cloudPassword', 'fixture-password'); a.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.match(a.q('#cloudDetail').textContent, /帳號或密碼不正確/);
+  assert.equal(a.q('#materialCount').textContent, '0'); assert.equal(a.calls.length, 0);
+  for (let index = 0; index < a.w.localStorage.length; index++) {
+    assert(!a.w.localStorage.getItem(a.w.localStorage.key(index)).includes('fixture-password'), 'No password copied to app storage');
+  }
+  a.assertLegacy(); a.w.close();
+  const b = setup({ authenticated: false, accountSession: { user: { ...session.user, email: 'ntnu7@nhunrezwvfwqqappdqij.warehouse.invalid' } } }); await tick();
+  b.handler(async () => ({ data: null, error: { code: '42501', message: 'WAREHOUSE_ACCESS_DENIED' } }));
+  b.change('#cloudEmail', 'ntnu7'); b.change('#cloudPassword', 'fixture-password'); b.q('#cloudLoginForm').requestSubmit(); await tick();
+  assert.match(b.q('#cloudStatus').textContent, /沒有使用權限/);
+  assert.equal(b.q('#materialCount').textContent, '0'); assert(b.q('#newMaterialButton').disabled);
+  assert(b.q('#cloudImportPanel').classList.contains('hidden'));
+  assert(b.calls.every(call => call.name === 'warehouse_snapshot')); b.assertLegacy(); b.w.close();
 });
 
 test('Phone import requires current backup and explicit device confirmation, preserves history and stock', async () => {
