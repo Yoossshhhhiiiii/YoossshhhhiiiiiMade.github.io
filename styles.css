@@ -50,7 +50,8 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .account-popover-heading p { font-size: 12px; margin-top: 7px; }
 .account-popover-heading small { display: block; font-size: 11px; color: #616161; margin-top: 5px; }
 .account-action { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 62px; padding: 10px 14px; border-radius: 10px; text-align: left; font-size: 13px; }
-.account-action > span:first-child { width: 20px; text-align: center; font-size: 21px; }
+.account-action > .account-action-icon { width: 20px; height: 20px; flex: 0 0 20px; stroke-width: 1.5; }
+.account-action > span { min-width: 0; }
 .account-action small { display: block; font-size: 11px; color: #616161; margin-top: 4px; line-height: 1.5; }
 .account-action:hover { background: #f5f5f5; }
 .account-divider { border-top: 1px solid var(--line); margin: 5px 14px; }

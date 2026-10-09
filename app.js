@@ -174,10 +174,26 @@ function renderToday() {
     : '<p class="activity-empty">新增或減少材料後，異動紀錄會顯示在這裡。</p>';
 }
 
+const locationCollator = new Intl.Collator('zh-Hant', { numeric: true });
+
+function locationRank(name) {
+  const floor = /^(\d+)樓(.*)$/.exec(name);
+  if (floor) return { floor: Number(floor[1]), side: floor[2] === '東' ? 0 : floor[2] === '西' ? 1 : floor[2] === '' ? 2 : 3 };
+  const basement = /^B(\d+)/i.exec(name);
+  return basement ? { floor: -Number(basement[1]), side: 0 } : { floor: -Infinity, side: 0 };
+}
+
+function compareLocations(a, b) {
+  const left = locationRank(a), right = locationRank(b);
+  if (left.floor !== right.floor) return left.floor > right.floor ? -1 : 1;
+  return left.side - right.side || locationCollator.compare(a, b);
+}
+
 function allLocations() {
   // Cloud is authoritative: deleted default floors must not be silently re-added.
-  if (cloudEnabled) return customLocations.slice();
-  return [...new Set([...LOCATIONS.slice(1).filter(name => !removedLocations.includes(name)), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean);
+  // Sort a display copy only; never mutate a snapshot or persist a reordered list.
+  if (cloudEnabled) return customLocations.slice().sort(compareLocations);
+  return [...new Set([...LOCATIONS.slice(1).filter(name => !removedLocations.includes(name)), ...customLocations, ...materials.map(item => item.location)])].filter(Boolean).sort(compareLocations);
 }
 
 function renderLocationOptions() {
@@ -371,7 +387,7 @@ function openMaterialForm(item = null) {
   $('materialStock').value = item?.stock ?? 0;
   $('materialAlert').value = item?.alert ?? 5;
   $('materialAlertEdit').value = item ? item.alert ?? '' : 5;
-  $('materialLocation').value = item?.location ?? (allLocations().includes('12樓西') ? '12樓西' : allLocations()[0] || '');
+  $('materialLocation').value = item?.location ?? (allLocations()[0] || '');
   $('materialDetail').value = item?.detail ?? '';
   $('materialFormHint').textContent = item?.alert == null && item ? '請設定警戒值；分類／規格、單位與詳細位置可留空。庫存數量請使用 ＋ 或 − 調整。' : item ? '分類／規格、單位與詳細位置可留空；庫存數量請使用 ＋ 或 − 調整。' : '分類／規格、單位與詳細位置可留空；庫存與警戒值請填入 0 或正整數。';
   $('materialModal').classList.remove('hidden');
