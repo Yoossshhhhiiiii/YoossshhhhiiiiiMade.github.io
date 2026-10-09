@@ -6,7 +6,7 @@
   const prefix = `inventory-cloud-pending-v1:${config?.url || ''}:`;
   const maxInteger = 2147483647;
   const usernamePattern = /^[a-z0-9][a-z0-9_-]{2,31}$/;
-  const state = { mode: 'starting', session: null, snapshot: null, busy: false, pending: [], message: '', revision: -1 };
+  const state = { mode: 'starting', session: null, snapshot: null, busy: false, pending: [], message: '', revision: -1, lastSyncedAt: null };
   let client;
   let hooks = {};
   let generation = 0;
@@ -25,6 +25,7 @@
     WAREHOUSE_MATERIAL_NOT_FOUND: '找不到這筆雲端材料，請重新同步。',
     WAREHOUSE_LOCATION_IN_USE: '此位置仍有材料，不能刪除。請先編輯材料，移到其他位置。',
     WAREHOUSE_LOCATION_NOT_FOUND: '此位置已不存在，請重新同步。',
+    WAREHOUSE_LOCATION_HAS_ARCHIVE: '此位置有封存材料，為保留歷史資料，暫不能刪除此位置。',
     WAREHOUSE_REQUEST_CONFLICT: '待確認操作與原紀錄不一致，請聯絡管理員；沒有再次異動。',
     WAREHOUSE_INVALID_INPUT: '欄位或數量不符合要求，請檢查後再送出。',
     WAREHOUSE_INVALID_IMPORT: '手機資料格式不符，請保留備份並聯絡管理員。',
@@ -181,16 +182,25 @@
       error: ['雲端尚未就緒', '請保留手機舊資料，不要清除瀏覽器資料。']
     };
     const [title, detail] = descriptions[state.mode] || descriptions.error;
-    el('cloudPanel').classList.remove('hidden');
+    // Never hide first import, connectivity errors or unresolved write results.
+    el('cloudPanel').classList.toggle('hidden', !!state.session && state.mode === 'ready' && !state.pending.length);
     el('cloudStatus').textContent = state.pending.length ? `有 ${state.pending.length} 筆操作需要確認` : title;
     el('cloudDetail').textContent = state.message || (state.pending.length ? '連線中斷可能發生在伺服器儲存後。請按「確認待處理操作」，系統不會重複扣庫存。' : detail);
     el('cloudLoginForm').classList.toggle('hidden', !!state.session);
     el('cloudLoginHelp').classList.toggle('hidden', !!state.session);
     el('cloudSignedIn').classList.toggle('hidden', !state.session);
     el('cloudAccount').textContent = accountLabel(state.session?.user);
+    el('accountControl').classList.toggle('hidden', !state.session);
+    el('accountStatus').textContent = state.pending.length ? `有 ${state.pending.length} 筆操作需要確認` : title;
+    el('accountMessage').textContent = state.message || (state.pending.length ? el('cloudDetail').textContent : '');
+    el('accountLastSync').textContent = state.lastSyncedAt ? `上次同步 ${new Intl.DateTimeFormat('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(state.lastSyncedAt))}` : '尚未完成同步';
+    el('accountButton').title = `${accountLabel(state.session?.user)} · ${title}`;
+    if (!state.session) { closeAccountMenu(); el('logoutModal').classList.add('hidden'); }
     el('cloudLoginButton').disabled = state.busy || !client;
     el('cloudLogoutButton').disabled = state.busy;
-    el('cloudRefreshButton').disabled = state.busy || !state.session;
+    el('cloudRefreshButton').disabled = state.busy || !!refreshing || !state.session;
+    el('cloudRefreshFromPanel').classList.toggle('hidden', !state.session);
+    el('cloudRefreshFromPanel').disabled = el('cloudRefreshButton').disabled;
     el('cloudRetryButton').classList.toggle('hidden', !state.pending.length);
     el('cloudRetryButton').disabled = state.busy;
     const needsImport = state.session && state.snapshot && !state.snapshot.initialized && state.snapshot.canImport;
@@ -200,7 +210,9 @@
     el('cloudLegacyCount').textContent = `此裝置的舊資料：${count} 項材料。`;
     el('cloudImportButton').disabled = !needsImport || !count || state.busy || state.pending.length > 0
       || !backupSignature || !el('confirmPhoneImport').checked || !el('confirmSavedBackup').checked;
-    el('backupCloudButton').classList.toggle('hidden', !state.snapshot?.initialized || !state.session);
+    el('backupCloudButton').disabled = !state.snapshot?.initialized || !state.session;
+    el('confirmLogout').disabled = state.busy || !state.session;
+    el('cancelLogout').disabled = state.busy;
     hooks.onStatus?.({ ...state, canWrite: canWrite() });
   }
 
@@ -211,6 +223,7 @@
     }
     if (snapshot.revision < state.revision) return;
     state.snapshot = copy(snapshot); state.revision = snapshot.revision;
+    state.lastSyncedAt = new Date().toISOString();
     state.mode = snapshot.initialized ? 'ready' : 'setup';
     state.message = '';
     hooks.applySnapshot?.(snapshot.initialized ? copy(snapshot) : { ...legacyInventory(), preview: true });
@@ -232,7 +245,7 @@
         state.message = errorText(error);
         if (state.mode === 'denied') { state.snapshot = null; hooks.clearSnapshot?.(); }
         publish();
-      } finally { if (current === generation) refreshing = undefined; }
+      } finally { if (current === generation) { refreshing = undefined; publish(); } }
     })();
     return refreshing;
   }
@@ -241,7 +254,7 @@
     const previous = state.session?.user.id;
     if (previous && previous === session?.user.id) { state.session = session; return; }
     generation++; refreshing = undefined;
-    state.session = session; state.snapshot = null; state.revision = -1; state.message = '';
+    state.session = session; state.snapshot = null; state.revision = -1; state.message = ''; state.lastSyncedAt = null;
     state.pending = []; backupSignature = ''; clearInterval(poll);
     el('confirmPhoneImport').checked = false; el('confirmSavedBackup').checked = false;
     hooks.clearSnapshot?.();
@@ -319,12 +332,14 @@
     if (!enabled) return;
     hooks = callbacks;
     el('backupDeviceButton').addEventListener('click', backupDevice);
+    el('backupDeviceFromPanel').addEventListener('click', backupDevice);
     el('backupCloudButton').addEventListener('click', () => {
       if (state.session && state.snapshot?.initialized) download({ format: 'warehouse-cloud-backup', schemaVersion: 1,
         exportedAt: new Date().toISOString(), inventory: state.snapshot }, `庫存管家-雲端備份-${new Date().toISOString().slice(0, 10)}.json`);
     });
     for (const id of ['confirmPhoneImport', 'confirmSavedBackup']) el(id).addEventListener('change', publish);
     el('cloudRefreshButton').addEventListener('click', () => void refresh());
+    el('cloudRefreshFromPanel').addEventListener('click', () => void refresh());
     el('cloudRetryButton').addEventListener('click', () => void retryPending());
     el('cloudImportButton').addEventListener('click', async () => {
       if (!el('confirmPhoneImport').checked || !el('confirmSavedBackup').checked || !backupSignature) return;
@@ -354,14 +369,41 @@
       }
       finally { state.busy = false; publish(); }
     });
-    el('cloudLogoutButton').addEventListener('click', async () => {
-      if (!client || state.busy) return;
+    el('accountButton').addEventListener('click', () => {
+      if (el('accountPopover').classList.contains('hidden')) {
+        el('accountPopover').classList.remove('hidden'); el('accountButton').setAttribute('aria-expanded', 'true');
+        el('cloudRefreshButton').focus();
+      } else closeAccountMenu(true);
+    });
+    document.addEventListener('click', event => {
+      if (!event.target.closest('#accountControl, #logoutModal')) closeAccountMenu();
+    });
+    document.addEventListener('focusin', event => {
+      if (!event.target.closest('#accountControl, #logoutModal')) closeAccountMenu();
+    });
+    const cancelLogout = () => {
+      if (state.busy) return;
+      el('logoutModal').classList.add('hidden'); el('accountButton').focus();
+    };
+    document.querySelectorAll('[data-cancel-logout]').forEach(control => control.addEventListener('click', cancelLogout));
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      if (!el('logoutModal').classList.contains('hidden')) cancelLogout();
+      else if (!el('accountPopover').classList.contains('hidden')) closeAccountMenu(true);
+    });
+    el('cloudLogoutButton').addEventListener('click', () => {
+      if (!state.session || state.busy) return;
+      closeAccountMenu(); el('logoutMessage').textContent = '';
+      el('logoutModal').classList.remove('hidden'); el('cancelLogout').focus();
+    });
+    el('confirmLogout').addEventListener('click', async () => {
+      if (!client || !state.session || state.busy) return;
       state.busy = true; publish();
       try {
         const { error } = await client.auth.signOut({ scope: 'local' });
         if (error) throw error;
         state.busy = false; await acceptSession(null);
-      } catch (error) { state.message = errorText(error); }
+      } catch (error) { state.message = errorText(error); el('logoutMessage').textContent = state.message; }
       finally { state.busy = false; publish(); }
     });
     window.addEventListener('online', () => void refresh());
@@ -402,6 +444,12 @@
         setTimeout(() => { void acceptSession(session); }, 0);
       });
     } catch (error) { state.mode = 'error'; state.message = error.message?.startsWith('雲端元件') ? error.message : errorText(error); publish(); }
+  }
+
+  function closeAccountMenu(restoreFocus = false) {
+    el('accountPopover')?.classList.add('hidden');
+    el('accountButton')?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) el('accountButton')?.focus();
   }
 
   window.InventoryCloud = Object.freeze({ start, canWrite, mutate, refresh, backupDevice,

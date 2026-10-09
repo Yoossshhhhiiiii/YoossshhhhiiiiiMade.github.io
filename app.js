@@ -55,11 +55,13 @@ const cloudEnabled = window.INVENTORY_CLOUD_CONFIG?.enabled === true ||
 const storedMaterials = localStorage.getItem('inventory-materials');
 let materials = cloudEnabled ? [] : storedMaterials ? JSON.parse(storedMaterials) : seed;
 let transactions = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-transactions') || '[]');
+let archivedMaterials = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-archived-materials') || '[]');
 let customLocations = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-locations') || '[]');
 let removedLocations = cloudEnabled ? [] : JSON.parse(localStorage.getItem('inventory-deleted-locations') || '[]');
 let activeMaterial = null;
 let editingMaterialId = null;
 let editingMaterialVersion = null;
+let deletingMaterial = null;
 let locationReturnToMaterial = false;
 let locationReturnView = 'home';
 let deleteLocationReturnButton = 'deleteLocationFromFilter';
@@ -73,6 +75,7 @@ function save() {
   if (cloudEnabled) throw new Error('雲端模式不可改寫裝置舊資料');
   localStorage.setItem('inventory-materials', JSON.stringify(materials));
   localStorage.setItem('inventory-transactions', JSON.stringify(transactions));
+  localStorage.setItem('inventory-archived-materials', JSON.stringify(archivedMaterials));
 }
 
 function importFirstFloorMaterials() {
@@ -106,6 +109,9 @@ function renderAccessControls() {
     $(id).disabled = disabled || allLocations().length === 0;
   }
   $('deleteLocationSelect').disabled = disabled;
+  $('deleteMaterialButton').disabled = disabled || !editingMaterialId;
+  $('confirmDeleteMaterial').disabled = disabled || !deletingMaterial;
+  for (const control of document.querySelectorAll('[data-cancel-delete-material]')) control.disabled = !!window.InventoryCloud?.status().busy;
   renderDeleteLocationState();
   document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
 }
@@ -353,6 +359,7 @@ function openMaterialForm(item = null) {
   $('materialForm').reset();
   $('materialModalTitle').textContent = item ? '編輯材料資料' : '新增材料';
   $('saveMaterialButton').textContent = item ? '儲存變更' : '儲存材料';
+  $('deleteMaterialButton').classList.toggle('hidden', !item);
   $('initialStockRow').classList.toggle('hidden', !!item);
   document.querySelector('.alert-only').classList.toggle('hidden', !item);
   $('materialStock').required = !item;
@@ -368,13 +375,57 @@ function openMaterialForm(item = null) {
   $('materialDetail').value = item?.detail ?? '';
   $('materialFormHint').textContent = item?.alert == null && item ? '請設定警戒值；分類／規格、單位與詳細位置可留空。庫存數量請使用 ＋ 或 − 調整。' : item ? '分類／規格、單位與詳細位置可留空；庫存數量請使用 ＋ 或 − 調整。' : '分類／規格、單位與詳細位置可留空；庫存與警戒值請填入 0 或正整數。';
   $('materialModal').classList.remove('hidden');
+  renderAccessControls();
   $('materialName').focus();
 }
 
-function closeMaterialForm() {
+function closeMaterialForm(force = false) {
+  if (deletingMaterial && window.InventoryCloud?.status().busy && force !== true) return;
+  $('deleteMaterialModal').classList.add('hidden');
+  deletingMaterial = null;
   $('materialModal').classList.add('hidden');
   editingMaterialId = null;
   editingMaterialVersion = null;
+}
+
+function openDeleteMaterial() {
+  if (!canModifyInventory()) return toast('請先完成同步或確認待處理操作');
+  const item = materials.find(item => item.id === editingMaterialId);
+  if (!item) return toast('材料已不存在，請重新同步');
+  // Confirm the persisted version, not an unsaved name or a newer hidden stock value.
+  if (item.version !== editingMaterialVersion) return toast('材料已在其他裝置更新，請關閉表單後重新編輯');
+  deletingMaterial = { ...item };
+  $('deleteMaterialName').textContent = item.name;
+  $('deleteMaterialLocation').textContent = `${item.location}${item.detail ? ` · ${item.detail}` : ''}`;
+  $('deleteMaterialStock').textContent = `目前庫存 ${formatNumber(item.stock)}${unitOf(item) ? ` ${unitOf(item)}` : ''}`;
+  $('materialModal').classList.add('hidden');
+  $('deleteMaterialModal').classList.remove('hidden');
+  renderAccessControls();
+  $('cancelDeleteMaterial').focus();
+}
+
+function cancelDeleteMaterial() {
+  if (window.InventoryCloud?.status().busy) return;
+  $('deleteMaterialModal').classList.add('hidden');
+  deletingMaterial = null;
+  $('materialModal').classList.remove('hidden');
+  $('deleteMaterialButton').focus();
+}
+
+async function confirmDeleteMaterial() {
+  if (!deletingMaterial || !canModifyInventory()) return;
+  const item = deletingMaterial;
+  if (cloudEnabled) {
+    try { await window.InventoryCloud.mutate('archive_material', { id: item.id, version: item.version }); }
+    catch (error) { return toast(error.message); }
+  } else {
+    archivedMaterials.push({ ...item, archivedAt: new Date().toISOString() });
+    materials = materials.filter(candidate => candidate.id !== item.id);
+    save();
+  }
+  closeMaterialForm(); resetMaterialPage();
+  toast('材料已移出清單，歷史異動與統計保留');
+  $('pageTitle').focus();
 }
 
 function openLocationForm(fromMaterial = false) {
@@ -434,10 +485,12 @@ async function saveLocationFromForm(event) {
 function renderDeleteLocationState() {
   const name = $('deleteLocationSelect').value;
   const count = materials.filter(item => item.location === name).length;
+  const archivedCount = archivedMaterials.filter(item => item.location === name).length;
   $('deleteLocationSummary').textContent = !name ? '只有沒有材料的位置可以刪除。刪除後會從所有位置選單移除。'
     : count ? `「${name}」仍有 ${count} 項材料，不能刪除。請先編輯材料，將它們移到其他位置。`
+    : archivedCount ? `「${name}」有 ${archivedCount} 項封存材料，為保留歷史資料，暫不能刪除此位置。`
     : `確定刪除「${name}」？此位置沒有材料；不會刪除材料、庫存或異動紀錄。需要時可重新增加同名位置。`;
-  $('confirmDeleteLocation').disabled = !canModifyInventory() || !name || count > 0 || !allLocations().includes(name);
+  $('confirmDeleteLocation').disabled = !canModifyInventory() || !name || count > 0 || archivedCount > 0 || !allLocations().includes(name);
 }
 
 function openDeleteLocationForm(fromPage = false) {
@@ -493,6 +546,7 @@ async function saveMaterialFromForm(event) {
   const form = $('materialForm');
   if (!form.reportValidity()) return;
   const editing = materials.find(item => item.id === editingMaterialId);
+  if (editingMaterialId != null && !editing) return toast('材料已不存在，請關閉表單並重新同步');
   const name = $('materialName').value.trim();
   const category = $('materialCategory').value.trim();
   const unit = $('materialUnit').value.trim();
@@ -519,7 +573,7 @@ async function saveMaterialFromForm(event) {
   } else if (editing) {
     Object.assign(editing, { name, spec: `${category}／${unit}`, alert, location, detail });
   } else {
-    materials.push({ id: Math.max(0, ...materials.map(item => item.id)) + 1, name, spec: `${category}／${unit}`, stock, alert, location, detail });
+    materials.push({ id: Math.max(0, ...materials.map(item => item.id), ...archivedMaterials.map(item => item.id)) + 1, name, spec: `${category}／${unit}`, stock, alert, location, detail });
   }
   if (!cloudEnabled) save();
   closeMaterialForm();
@@ -565,6 +619,9 @@ function init() {
   $('addLocationFromForm').addEventListener('click', () => openLocationForm(true));
   $('locationForm').addEventListener('submit', saveLocationFromForm);
   $('materialForm').addEventListener('submit', saveMaterialFromForm);
+  $('deleteMaterialButton').addEventListener('click', openDeleteMaterial);
+  $('confirmDeleteMaterial').addEventListener('click', confirmDeleteMaterial);
+  document.querySelectorAll('[data-cancel-delete-material]').forEach(button => button.addEventListener('click', cancelDeleteMaterial));
   document.querySelectorAll('[data-close-location-modal]').forEach(button => button.addEventListener('click', closeLocationForm));
   document.querySelectorAll('[data-close-delete-location-modal]').forEach(button => button.addEventListener('click', closeDeleteLocationForm));
   document.querySelectorAll('[data-close-material-modal]').forEach(button => button.addEventListener('click', closeMaterialForm));
@@ -573,7 +630,7 @@ function init() {
     if (event.key === 'Tab') {
       const dialog = document.querySelector('.modal:not(.hidden)');
       if (!dialog) return;
-      const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')];
+      const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')].filter(control => !control.closest('.hidden'));
       const first = controls[0];
       const last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) {
@@ -586,7 +643,9 @@ function init() {
       return;
     }
     if (event.key !== 'Escape') return;
-    if (!$('deleteLocationModal').classList.contains('hidden')) closeDeleteLocationForm();
+    if (!$('logoutModal').classList.contains('hidden')) return;
+    if (!$('deleteMaterialModal').classList.contains('hidden')) cancelDeleteMaterial();
+    else if (!$('deleteLocationModal').classList.contains('hidden')) closeDeleteLocationForm();
     else if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
     else { closeMaterialForm(); closeAdjustment(); }
   });
@@ -637,13 +696,15 @@ function init() {
       applySnapshot(snapshot) {
         materials = snapshot.materials;
         transactions = snapshot.transactions;
+        archivedMaterials = snapshot.archivedMaterials || [];
         customLocations = snapshot.locations;
         renderLocationOptions();
         if (!$('locationFilter').value) $('locationFilter').value = '全部位置';
         render();
       },
       clearSnapshot() {
-        materials = []; transactions = []; customLocations = [];
+        materials = []; transactions = []; customLocations = []; archivedMaterials = [];
+        deletingMaterial = null;
         closeAdjustment(); closeMaterialForm();
         $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
         $('deleteLocationModal').classList.add('hidden');
@@ -651,7 +712,7 @@ function init() {
       },
       onStatus: renderAccessControls,
       onRecovered() {
-        closeAdjustment(); closeMaterialForm(); $('locationModal').classList.add('hidden');
+        closeAdjustment(); closeMaterialForm(true); $('locationModal').classList.add('hidden');
         $('deleteLocationModal').classList.add('hidden');
         locationReturnToMaterial = false; toast('待處理操作已確認，沒有重複異動');
       }

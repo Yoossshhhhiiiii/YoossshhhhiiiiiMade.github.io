@@ -40,6 +40,35 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .window-tools { display: flex; gap: 5px; margin-left: auto; }
 .icon-button { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; }
 .icon-button:hover { background: var(--muted); }
+.account-control { position: relative; }
+.account-button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
+.account-avatar { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: #f5f5f5; }
+.account-button:hover .account-avatar, .account-button[aria-expanded="true"] .account-avatar { border-color: #111; background: #eee; }
+.account-popover { position: absolute; z-index: 30; right: 0; top: calc(100% + 11px); width: 336px; max-width: calc(100vw - 28px); max-height: calc(100dvh - 90px); overflow: auto; padding: 8px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: 0 18px 60px #0000001f; }
+.account-popover-heading { padding: 14px 14px 12px; overflow-wrap: anywhere; }
+.account-popover-heading strong { display: block; font-size: 16px; }
+.account-popover-heading p { font-size: 12px; margin-top: 7px; }
+.account-popover-heading small { display: block; font-size: 11px; color: #616161; margin-top: 5px; }
+.account-action { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 62px; padding: 10px 14px; border-radius: 10px; text-align: left; font-size: 13px; }
+.account-action > span:first-child { width: 20px; text-align: center; font-size: 21px; }
+.account-action small { display: block; font-size: 11px; color: #616161; margin-top: 4px; line-height: 1.5; }
+.account-action:hover { background: #f5f5f5; }
+.account-divider { border-top: 1px solid var(--line); margin: 5px 14px; }
+.modal-card.material-modal-card { display: flex; flex-direction: column; overflow: hidden; }
+.material-modal-card > .eyebrow, .material-modal-card > h2 { flex-shrink: 0; }
+#materialForm { display: flex; flex-direction: column; min-height: 0; }
+.material-form-body { overflow-y: auto; min-height: 0; padding: 0 3px 3px; margin: 0 -3px; }
+.modal-actions.material-form-footer { flex-shrink: 0; align-items: center; justify-content: space-between; padding-top: 15px; border-top: 1px solid var(--line); margin-top: 15px; }
+.material-save-actions { display: flex; gap: 10px; margin-left: auto; }
+.delete-material-button { padding-inline: 12px; }
+.delete-material-summary { margin: 22px 0 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.delete-material-summary p { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .account-popover { width: 326px; }
+  .material-form-footer { gap: 6px; }
+  .material-save-actions { gap: 6px; }
+  .material-form-footer button { padding-inline: 10px; font-size: 12px; min-height: 44px; }
+}
 .app-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); }
 .sidebar { padding: 29px 13px 20px; border-right: 1px solid var(--line); display: flex; flex-direction: column; border-radius: 0 0 0 22px; background: var(--surface); }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 5px 33px; }
