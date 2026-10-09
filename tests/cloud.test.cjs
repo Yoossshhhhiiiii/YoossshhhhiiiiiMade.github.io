@@ -13,6 +13,73 @@ const phone = { materials: [{ id: 1, name: '手機材料', spec: '管件／個',
   transactions: [{ materialId: 1, materialName: '手機材料', unit: '個', amount: 1, type: '減少', time: new Date().toISOString(), reason: '維修使用', note: '315' }], locations: ['3樓315'] };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('Account popover exposes four real actions; logout requires confirmation and keeps backups', async () => {
+  const a = setup(); await tick();
+  assert(a.q('#cloudPanel').classList.contains('hidden'));
+  assert(!a.q('#accountControl').classList.contains('hidden'));
+  a.click('#accountButton'); assert.equal(a.q('#accountButton').getAttribute('aria-expanded'), 'true');
+  assert.deepEqual([...a.q('#accountPopover').querySelectorAll('.account-action')].map(button => button.id), ['cloudRefreshButton', 'cloudLogoutButton', 'backupDeviceButton', 'backupCloudButton']);
+  assert.match(a.q('#accountStatus').textContent, /雲端已連線/); assert.match(a.q('#accountLastSync').textContent, /上次同步/);
+  const reads = a.calls.length; a.click('#cloudRefreshButton'); await tick(); assert(a.calls.length > reads);
+  a.click('#backupDeviceButton'); a.click('#backupCloudButton'); assert.equal(a.downloads.length, 2);
+  assert(a.q('#cloudPanel').classList.contains('hidden'), 'Routine downloads do not restore the large account card');
+  a.click('#cloudLogoutButton'); assert(!a.q('#logoutModal').classList.contains('hidden'));
+  assert.equal(a.w.document.activeElement.id, 'cancelLogout'); a.click('#cancelLogout');
+  assert.equal(a.authCalls.length, 0); assert.equal(a.q('#materialCount').textContent, '1');
+  a.click('#accountButton'); a.click('#cloudLogoutButton'); a.click('#confirmLogout'); await tick();
+  assert.equal(a.authCalls[0].signOut.scope, 'local');
+  assert(a.q('#accountControl').classList.contains('hidden')); assert(!a.q('#cloudLoginForm').classList.contains('hidden'));
+  a.assertLegacy(); a.w.close();
+});
+
+test('Material delete cancellation retains unsaved fields; confirmed archive preserves usage and statistics', async () => {
+  const a = setup(); await tick();
+  a.click('#newMaterialButton'); assert(a.q('#deleteMaterialButton').classList.contains('hidden'));
+  a.click('#materialModal [data-close-material-modal]');
+  a.click('[data-action="minus"]'); a.change('#noteInput', '315'); a.click('#confirmAdjustment'); await tick();
+  const beforeHistory = structuredClone(a.server().transactions);
+  a.click('[data-action="edit"]'); a.change('#materialName', '尚未儲存名稱'); a.click('#deleteMaterialButton');
+  assert.equal(a.q('#deleteMaterialName').textContent, '手機材料', 'Confirmation uses saved identity');
+  assert.equal(a.w.document.activeElement.id, 'cancelDeleteMaterial');
+  a.click('#cancelDeleteMaterial'); assert.equal(a.q('#materialName').value, '尚未儲存名稱');
+  assert.equal(a.w.document.activeElement.id, 'deleteMaterialButton');
+  assert(!a.calls.some(call => call.params?.p_operation === 'archive_material'));
+  a.click('#deleteMaterialButton'); a.click('#confirmDeleteMaterial'); await tick();
+  assert.equal(a.q('#materialCount').textContent, '0');
+  assert(a.q('#deleteMaterialModal').classList.contains('hidden'));
+  assert.equal(a.server().archivedMaterials[0].stock, 11);
+  assert.deepEqual(a.server().transactions, beforeHistory); assert.match(a.q('#todayTransactions').textContent, /手機材料/);
+  assert.equal(a.q('#monthlyUsage').textContent, '1');
+  a.click('[data-view="stats"]'); assert.match(a.q('#rangeTransactions').textContent, /315/);
+  a.click('#deleteLocationFromFilter'); a.change('#deleteLocationSelect', '3樓315');
+  assert(a.q('#confirmDeleteLocation').disabled); assert.match(a.q('#deleteLocationSummary').textContent, /封存/);
+  a.assertLegacy(); a.w.close();
+});
+
+test('Stale archive, offline archive and unknown-result retry never remove or duplicate material optimistically', async () => {
+  const a = setup(); await tick(); a.click('[data-action="edit"]');
+  a.server().materials[0].version++; a.server().revision++; await a.w.InventoryCloud.refresh();
+  a.click('#deleteMaterialButton'); assert(a.q('#deleteMaterialModal').classList.contains('hidden'));
+  a.click('#materialModal [data-close-material-modal]'); a.click('[data-action="edit"]'); a.click('#deleteMaterialButton');
+  a.w.dispatchEvent(new a.w.Event('offline')); assert(a.q('#confirmDeleteMaterial').disabled);
+  assert(!a.q('#cloudPanel').classList.contains('hidden'), 'Offline state remains visible outside the popover');
+  await a.w.InventoryCloud.refresh();
+  let resolve;
+  a.handler((name) => name === 'warehouse_snapshot' ? Promise.resolve({ data: structuredClone(a.server()), error: null }) : new Promise(r => { resolve = r; }));
+  a.click('#confirmDeleteMaterial'); a.click('#confirmDeleteMaterial');
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'archive_material').length, 1);
+  assert.equal(a.q('#materialCount').textContent, '1'); assert(a.q('#cancelDeleteMaterial').disabled);
+  const request = a.calls.find(call => call.params?.p_operation === 'archive_material');
+  a.server().archivedMaterials = [{ ...a.server().materials[0], archivedAt: new Date().toISOString() }]; a.server().materials = []; a.server().revision++;
+  resolve({ data: null, error: { message: 'Failed to fetch' } }); await tick();
+  assert(!a.q('#cloudPanel').classList.contains('hidden')); assert(!a.q('#cloudRetryButton').classList.contains('hidden'));
+  a.handler(async () => ({ data: structuredClone(a.server()), error: null }));
+  a.click('#cloudRetryButton'); await tick();
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'archive_material').at(-1).params.p_request_id, request.params.p_request_id);
+  assert.equal(a.q('#materialCount').textContent, '0'); assert(a.q('#deleteMaterialModal').classList.contains('hidden'));
+  a.assertLegacy(); a.w.close();
+});
+
 function setup({ authenticated = true, initialized = true, sdk = true, legacy = phone,
   accountSession = session, authError = null, configOverride = null } = {}) {
   const dom = new JSDOM(html, { url: 'https://yoossshhhhiiiii.github.io/YoossshhhhiiiiiMade.github.io/', runScripts: 'outside-only', pretendToBeVisual: true });
@@ -42,7 +109,7 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
         authCalls.push(credentials);
         return { data: { session: authError ? null : accountSession }, error: authError };
       },
-      signOut: async () => ({ error: null })
+      signOut: async options => { authCalls.push({ signOut: options }); return { error: null }; }
     },
     rpc: async (name, params) => {
       calls.push({ name, params });
@@ -65,6 +132,13 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
             const metadata = { name: payload.name, spec: `${payload.category}／${payload.unit}`, alert: payload.alert, location: payload.location, detail: payload.detail };
             if (item) Object.assign(item, metadata, { version: item.version + 1 });
             else server.materials.push({ id: Math.max(0, ...server.materials.map(item => item.id)) + 1, ...metadata, stock: payload.stock, version: 1 });
+          } else if (params.p_operation === 'archive_material') {
+            const item = server.materials.find(item => item.id === payload.id);
+            if (!item) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_MATERIAL_NOT_FOUND' } };
+            if (item.version !== payload.version) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_EDIT_CONFLICT' } };
+            server.archivedMaterials ||= [];
+            server.archivedMaterials.push({ ...item, version: item.version + 1, archivedAt: new Date().toISOString() });
+            server.materials = server.materials.filter(candidate => candidate.id !== item.id);
           }
           server.revision++; ledger.set(params.p_request_id, true);
         }
@@ -211,7 +285,7 @@ test('Cloud adjustments are confirmed before UI changes; lost response retries s
 });
 
 test('Logout clears displayed cloud inventory, revocation hides cloud data, import validation rejects bad/orphaned data', async () => {
-  const a = setup(); await tick(); a.click('#cloudLogoutButton'); await tick();
+  const a = setup(); await tick(); a.click('#cloudLogoutButton'); a.click('#confirmLogout'); await tick();
   assert.equal(a.q('#materialCount').textContent, '0'); assert(a.q('#newMaterialButton').disabled); a.assertLegacy(); a.w.close();
   const b = setup(); await tick();
   b.handler(async () => ({ data: null, error: { code: '42501', message: 'WAREHOUSE_ACCESS_DENIED' } }));
