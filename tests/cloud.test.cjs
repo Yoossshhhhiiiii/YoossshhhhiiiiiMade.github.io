@@ -13,6 +13,63 @@ const phone = { materials: [{ id: 1, name: '手機材料', spec: '管件／個',
   transactions: [{ materialId: 1, materialName: '手機材料', unit: '個', amount: 1, type: '減少', time: new Date().toISOString(), reason: '維修使用', note: '315' }], locations: ['3樓315'] };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+test('Account actions use the four preview SVG icons without changing their real actions', async () => {
+  const a = setup(); await tick();
+  const expected = [
+    ['cloudRefreshButton', '#icon-sync'], ['cloudLogoutButton', '#icon-logout'],
+    ['backupDeviceButton', '#icon-device-download'], ['backupCloudButton', '#icon-cloud-download']
+  ];
+  for (const [id, icon] of expected) {
+    const svg = a.q(`#${id} > svg.account-action-icon`);
+    assert(svg, `${id} needs a consistent SVG icon`);
+    assert.equal(svg.getAttribute('aria-hidden'), 'true');
+    assert.equal(svg.querySelector('use').getAttribute('href'), icon);
+    assert(a.q(icon), `${icon} must resolve to an existing SVG symbol`);
+  }
+  const css = fs.readFileSync(path.join(__dirname, '../styles.css'), 'utf8');
+  assert.match(css, /\.account-action > \.account-action-icon \{ width: 20px; height: 20px; flex: 0 0 20px; stroke-width: 1\.5;/);
+  a.click('#accountButton'); a.click('#cloudRefreshButton'); await tick();
+  a.click('#accountButton'); a.click('#cloudLogoutButton'); a.click('#cancelLogout');
+  assert.equal(a.authCalls.length, 0); a.assertLegacy(); a.w.close();
+});
+
+test('Location cards and all dropdowns sort floors descending, east before west, and B1 last without changing stored data', async () => {
+  const a = setup(); await tick();
+  const original = ['10樓東', '10樓西', '11樓東', '11樓西', '12樓東', '12樓西', '1樓', '2樓東', '2樓西', '3樓315', '3樓東', '3樓西', '4樓東', '4樓西', '5樓東', '5樓西', '6樓東', '6樓西', '7樓東', '7樓西', '8樓東', '8樓西', '9樓東', '9樓西', 'B1變電站'];
+  a.server().locations = original.slice();
+  const before = structuredClone(a.server());
+  await a.w.InventoryCloud.refresh();
+  const expected = [];
+  for (let floor = 12; floor >= 2; floor--) {
+    expected.push(`${floor}樓東`, `${floor}樓西`);
+    if (floor === 3) expected.push('3樓315');
+  }
+  expected.push('1樓', 'B1變電站');
+  assert.deepEqual([...a.q('#warehouseLocations').children].map(card => card.dataset.location), expected);
+  assert.deepEqual([...a.q('#locationFilter').options].map(option => option.value), ['全部位置', ...expected]);
+  assert.deepEqual([...a.q('#materialLocation').options].map(option => option.value), expected);
+  assert.deepEqual([...a.q('#deleteLocationSelect').options].map(option => option.value), ['', ...expected]);
+  a.click('#newMaterialButton'); assert.equal(a.q('#materialLocation').value, '12樓東');
+  a.change('#materialLocation', '3樓315'); await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#materialLocation').value, '3樓315', 'Sync keeps an unsaved location selection');
+  a.click('#materialModal [data-close-material-modal]'); a.click('[data-action="edit"]');
+  assert.equal(a.q('#materialLocation').value, '3樓315', 'Editing preserves the saved material location');
+  assert.deepEqual(a.server(), before, 'Sorting never changes stock, history, stored location order or revision');
+  assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  a.assertLegacy(); a.w.close();
+});
+
+test('Location sorting places added rooms numerically within their floor and handles basements and unknown names', async () => {
+  const a = setup(); await tick();
+  a.server().locations = ['備品庫10', 'B2機房', '3樓315', '1樓', '3樓西', '備品庫2', 'B1變電站', '12樓西', '3樓東', '3樓302', '12樓東'];
+  const original = a.server().locations.slice(); await a.w.InventoryCloud.refresh();
+  assert.deepEqual([...a.q('#materialLocation').options].map(option => option.value),
+    ['12樓東', '12樓西', '3樓東', '3樓西', '3樓302', '3樓315', '1樓', 'B1變電站', 'B2機房', '備品庫2', '備品庫10']);
+  assert.deepEqual(a.server().locations, original);
+  assert(![...a.q('#locationFilter').options].some(option => option.value === '11樓東'), 'No absent default location is re-added');
+  a.assertLegacy(); a.w.close();
+});
+
 test('Account popover exposes four real actions; logout requires confirmation and keeps backups', async () => {
   const a = setup(); await tick();
   assert(a.q('#cloudPanel').classList.contains('hidden'));
@@ -448,6 +505,8 @@ test('Local-only preview allows empty optional fields and retains removed defaul
   const w = dom.window; w.INVENTORY_CLOUD_CONFIG = { enabled: false }; w.eval(app);
   const q = selector => w.document.querySelector(selector);
   q('#newMaterialButton').click(); q('#materialName').value = '本機選填材料'; q('#materialStock').value = '3'; q('#materialAlert').value = '0';
+  assert.equal(q('#materialLocation').value, '12樓東');
+  q('#materialLocation').value = '12樓西'; // Keep the following empty-location deletion fixture empty.
   q('#materialForm').requestSubmit();
   assert.equal(JSON.parse(w.localStorage.getItem('inventory-materials')).find(item => item.name === '本機選填材料').spec, '／');
   q('#locationFilter').value = '12樓東'; q('#deleteLocationFromFilter').click(); q('#deleteLocationForm').requestSubmit();
