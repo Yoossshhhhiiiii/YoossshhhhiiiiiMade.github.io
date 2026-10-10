@@ -66,6 +66,9 @@ let locationReturnToMaterial = false;
 let locationReturnView = 'home';
 let deleteLocationReturnButton = 'deleteLocationFromFilter';
 let step = 1;
+let adjustmentSubmitting = false;
+let adjustmentReturnButton = null;
+const adjustmentAccountHome = document.getElementById('accountControl')?.parentElement;
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
 let lowStockOnly = false;
@@ -113,6 +116,7 @@ function renderAccessControls() {
   $('confirmDeleteMaterial').disabled = disabled || !deletingMaterial;
   for (const control of document.querySelectorAll('[data-cancel-delete-material]')) control.disabled = !!window.InventoryCloud?.status().busy;
   renderDeleteLocationState();
+  if (activeMaterial) renderAdjustment();
   document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
 }
 
@@ -351,21 +355,115 @@ function renderStats() {
 
 function openAdjustment(item, type) {
   if (!canModifyInventory()) return toast('請先登入並完成雲端同步，尚未異動庫存');
+  adjustmentReturnButton = document.activeElement;
   activeMaterial = item;
   step = 1;
-  $('stepValue').textContent = step;
-  $('modalEyebrow').textContent = type;
-  $('modalTitle').textContent = `${type}｜${item.name}`;
-  $('modalLocation').textContent = `${item.location}${item.detail ? ` · ${item.detail}` : ''} · 目前 ${item.stock} ${unitOf(item)}`;
+  $('stepValue').value = '1';
   $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '維修使用';
   $('noteInput').value = '';
+  if (cloudEnabled && $('accountControl')) $('adjustmentAccountSlot').append($('accountControl'));
   $('modal').classList.remove('hidden');
-  $('noteInput').focus?.();
+  document.body.classList.add('adjustment-open');
+  document.querySelector('.app-shell').inert = true;
+  $('adjustmentBody').scrollTop = 0;
+  updateAdjustmentViewport();
+  renderAdjustment();
+  $('adjustmentBack').focus({ preventScroll: true });
 }
 
-function closeAdjustment() {
+function closeAdjustment(force = false) {
+  if (adjustmentSubmitting && force !== true) return;
+  if (force === true) adjustmentSubmitting = false;
+  const itemId = activeMaterial?.id;
   $('modal').classList.add('hidden');
+  document.body.classList.remove('adjustment-open');
+  document.querySelector('.app-shell').inert = false;
+  if (adjustmentAccountHome && $('accountControl').parentElement === $('adjustmentAccountSlot')) {
+    $('accountPopover').classList.add('hidden');
+    $('accountButton').setAttribute('aria-expanded', 'false');
+    adjustmentAccountHome.append($('accountControl'));
+  }
   activeMaterial = null;
+  if (itemId != null) queueMicrotask(() => {
+    const target = adjustmentReturnButton?.isConnected ? adjustmentReturnButton
+      : document.querySelector(`#materialList [data-id="${Number(itemId)}"][data-action="minus"]`);
+    if (target?.isConnected && !target.disabled) target.focus({ preventScroll: true });
+  });
+}
+
+function validateAdjustment() {
+  const item = materials.find(candidate => candidate.id === activeMaterial?.id);
+  if (!item) return { item: null, error: '這項材料已移除，請返回清單重新確認。' };
+  const raw = $('stepValue').value;
+  const quantity = Number(raw);
+  const adding = $('reasonSelect').value === '入庫補貨';
+  if (!['入庫補貨', '維修使用'].includes($('reasonSelect').value)) return { item, error: '請選擇異動原因。' };
+  if (!/^[0-9]+$/.test(raw) || !Number.isSafeInteger(quantity) || quantity < 1) return { item, error: '請輸入大於 0 的整數。' };
+  const after = item.stock + (adding ? quantity : -quantity);
+  if (quantity > 2147483647 || !Number.isSafeInteger(after) || after > 2147483647) return { item, error: '數量過大，請重新輸入。' };
+  if (after < 0) return { item, quantity, adding, error: `庫存只有 ${formatNumber(item.stock)}${unitOf(item) ? ` ${unitOf(item)}` : ''}，領用數量不能超過庫存。` };
+  return { item, quantity, adding, after, error: '' };
+}
+
+function renderAdjustment() {
+  if (!activeMaterial) return;
+  const checked = validateAdjustment();
+  const item = checked.item || activeMaterial;
+  if (checked.item) activeMaterial = checked.item;
+  const adding = $('reasonSelect').value === '入庫補貨';
+  const action = adding ? '補貨' : '領用';
+  const unit = unitOf(item);
+  const busy = adjustmentSubmitting || !!window.InventoryCloud?.status().busy;
+  $('modalEyebrow').textContent = adding ? '入庫補貨' : '維修領用';
+  $('modalTitle').textContent = item.name;
+  $('modalLocation').textContent = item.location;
+  $('adjustmentDetail').textContent = item.detail || '';
+  $('adjustmentDetail').classList.toggle('hidden', !item.detail);
+  $('adjustmentStock').textContent = formatNumber(item.stock);
+  const hasAlert = item.alert !== null && item.alert !== undefined;
+  $('adjustmentThreshold').textContent = hasAlert
+    ? `${item.stock < item.alert ? '低於警戒值' : item.stock === item.alert ? '達到警戒值' : '警戒值'} ${formatNumber(item.alert)}${unit ? ` ${unit}` : ''}`
+    : '尚未設定警戒值';
+  $('adjustmentStockStatus').textContent = hasAlert ? (isLow(item) ? '數量偏低，請留意庫存。' : '目前庫存充足。') : '可在編輯材料中設定。';
+  $('adjustmentQuantityLabel').textContent = `${action}數量`;
+  $('stepValue').style.width = `${Math.min(7, Math.max(2, $('stepValue').value.length))}ch`;
+  $('stepValue').setAttribute('aria-invalid', String(!!checked.error));
+  $('adjustmentError').textContent = checked.error;
+  $('adjustmentError').classList.toggle('hidden', !checked.error);
+  $('adjustmentBefore').textContent = formatNumber(item.stock);
+  $('adjustmentAfterLabel').textContent = `${action}後數量`;
+  $('adjustmentAfter').textContent = checked.error ? '待確認' : formatNumber(checked.after);
+  $('adjustmentAfter').classList.toggle('invalid-result', !!checked.error);
+  document.querySelectorAll('.adjustment-unit').forEach(element => { element.textContent = unit; });
+  $('adjustmentAfterUnit').classList.toggle('hidden', !!checked.error);
+  $('adjustmentReasonHint').textContent = adding
+    ? '已切換為增加庫存；如需維修領用，請切換為「維修使用」。'
+    : '如需入庫補貨，請切換為「入庫補貨」，系統將以入庫方式處理，不會視為領用。';
+  $('confirmAdjustment').textContent = busy ? '等待確認…' : `確認${action}${checked.quantity ? ` ${formatNumber(checked.quantity)}${unit ? ` ${unit}` : ''}` : ''}`;
+  $('confirmAdjustment').disabled = busy || !canModifyInventory() || !!checked.error;
+  $('decreaseStep').disabled = busy || Number($('stepValue').value) === 1;
+  $('increaseStep').disabled = busy || Number($('stepValue').value) >= 2147483647;
+  for (const id of ['stepValue', 'reasonSelect', 'noteInput']) $(id).disabled = busy;
+  document.querySelectorAll('[data-close-modal]').forEach(button => { if (button.tagName === 'BUTTON') button.disabled = adjustmentSubmitting; });
+  $('adjustmentSubmissionStatus').textContent = busy ? '正在確認，請勿重複送出。'
+    : !canModifyInventory() ? '目前無法送出；請先確認連線或待處理操作。'
+    : cloudEnabled ? '確認後由雲端更新庫存並記錄異動。' : '確認後才會更新庫存並記錄異動。';
+}
+
+function updateAdjustmentViewport() {
+  const viewport = window.visualViewport;
+  $('modal').style.setProperty('--adjustment-viewport-height', `${viewport?.height || window.innerHeight}px`);
+  $('modal').style.setProperty('--adjustment-viewport-top', `${viewport?.offsetTop || 0}px`);
+  if (activeMaterial && $('adjustmentBody').contains(document.activeElement)) {
+    requestAnimationFrame(() => document.activeElement?.scrollIntoView?.({ block: 'nearest' }));
+  }
+}
+
+function changeAdjustmentQuantity(delta) {
+  const current = Number($('stepValue').value);
+  step = Math.max(1, Math.min(2147483647, (Number.isSafeInteger(current) && current >= 1 ? current : 0) + delta));
+  $('stepValue').value = String(step);
+  renderAdjustment();
 }
 
 function openMaterialForm(item = null) {
@@ -644,7 +742,7 @@ function init() {
   document.querySelectorAll('[data-close-modal]').forEach(button => button.addEventListener('click', closeAdjustment));
   document.addEventListener('keydown', event => {
     if (event.key === 'Tab') {
-      const dialog = document.querySelector('.modal:not(.hidden)');
+      const dialog = [...document.querySelectorAll('.modal:not(.hidden)')].at(-1);
       if (!dialog) return;
       const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')].filter(control => !control.closest('.hidden'));
       const first = controls[0];
@@ -659,6 +757,8 @@ function init() {
       return;
     }
     if (event.key !== 'Escape') return;
+    // The account controller closes its own popover without discarding this draft.
+    if (!$('accountPopover').classList.contains('hidden')) return;
     if (!$('logoutModal').classList.contains('hidden')) return;
     if (!$('deleteMaterialModal').classList.contains('hidden')) cancelDeleteMaterial();
     else if (!$('deleteLocationModal').classList.contains('hidden')) closeDeleteLocationForm();
@@ -673,29 +773,40 @@ function init() {
     if (button.dataset.action === 'edit') openMaterialForm(item);
     else openAdjustment(item, button.dataset.action === 'plus' ? '增加庫存' : '減少庫存');
   });
-  $('increaseStep').onclick = () => { step++; $('stepValue').textContent = step; };
-  $('decreaseStep').onclick = () => { step = Math.max(1, step - 1); $('stepValue').textContent = step; };
-  $('confirmAdjustment').onclick = async () => {
-    if (!activeMaterial) return;
+  $('increaseStep').onclick = () => changeAdjustmentQuantity(1);
+  $('decreaseStep').onclick = () => changeAdjustmentQuantity(-1);
+  $('stepValue').addEventListener('input', renderAdjustment);
+  $('reasonSelect').addEventListener('change', renderAdjustment);
+  window.visualViewport?.addEventListener('resize', updateAdjustmentViewport);
+  window.visualViewport?.addEventListener('scroll', updateAdjustmentViewport);
+  window.addEventListener('resize', updateAdjustmentViewport);
+  $('adjustmentForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!activeMaterial || adjustmentSubmitting) return;
     if (!canModifyInventory()) return toast('請先確認連線或待處理操作，尚未新增異動');
-    const item = activeMaterial;
-    const adding = $('modalEyebrow').textContent === '增加庫存';
-    const amount = adding ? step : -step;
-    if (item.stock + amount < 0) return toast('庫存不足，無法扣除這麼多數量');
-    if (!Number.isSafeInteger(amount) || Math.abs(amount) > 2147483647) return toast('異動數量過大');
+    const checked = validateAdjustment();
+    if (checked.error) { renderAdjustment(); $('stepValue').focus(); return; }
+    const { item, adding, quantity } = checked;
+    const amount = adding ? quantity : -quantity;
+    const reason = $('reasonSelect').value;
+    const note = $('noteInput').value.trim();
+    if (note.length > 2000) return toast('備註最多可輸入 2000 個字');
+    adjustmentSubmitting = true;
+    renderAdjustment();
     if (cloudEnabled) {
-      try { await window.InventoryCloud.mutate('adjust_stock', { materialId: item.id, amount, reason: $('reasonSelect').value, note: $('noteInput').value.trim() }); }
-      catch (error) { return toast(error.message); }
+      try { await window.InventoryCloud.mutate('adjust_stock', { materialId: item.id, amount, reason, note }); }
+      catch (error) { adjustmentSubmitting = false; renderAdjustment(); return toast(error.message); }
     } else {
       item.stock += amount;
-      transactions.push({ materialId: item.id, materialName: item.name, unit: unitOf(item), amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason: $('reasonSelect').value, note: $('noteInput').value.trim() });
+      transactions.push({ materialId: item.id, materialName: item.name, unit: unitOf(item), amount: Math.abs(amount), type: adding ? '增加' : '減少', time: new Date().toISOString(), reason, note });
       save();
     }
+    adjustmentSubmitting = false;
     closeAdjustment();
     render();
     const updated = materials.find(candidate => candidate.id === item.id) || item;
-    toast(isLow(updated) ? `${updated.name} 已異動，庫存低於警戒值` : '庫存異動已完成');
-  };
+    toast(isLow(updated) ? `${updated.name} 已異動，庫存${updated.stock === updated.alert ? '已達' : '低於'}警戒值` : '庫存異動已完成');
+  });
   $('closeStats').onclick = () => setView('home');
   $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; lowStockOnly = false; setView('materials'); resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
   $('notifyButton').onclick = () => toast('正式版將在低於警戒值時傳送 LINE 通知');
@@ -721,7 +832,7 @@ function init() {
       clearSnapshot() {
         materials = []; transactions = []; customLocations = []; archivedMaterials = [];
         deletingMaterial = null;
-        closeAdjustment(); closeMaterialForm();
+        closeAdjustment(true); closeMaterialForm();
         $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
         $('deleteLocationModal').classList.add('hidden');
         renderLocationOptions(); render();

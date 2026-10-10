@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light" />
-    <meta name="inventory-version" content="20261009-icons-location-order-1" />
+    <meta name="inventory-version" content="20261010-material-adjustment-1" />
     <meta name="description" content="水電材料庫存與倉位管理" />
     <script>
       document.documentElement.classList.add('intro-active');
@@ -18,7 +18,7 @@
       }, 10000);
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261005-intro-1" />
-    <link rel="stylesheet" href="styles.css?v=20261009-icons-location-order-1" />
+    <link rel="stylesheet" href="styles.css?v=20261010-material-adjustment-1" />
     <script src="intro.js?v=20261005-intro-1" defer></script>
     <title>庫存管家｜水電材料管理</title>
   </head>
@@ -132,17 +132,44 @@
         </main>
       </div>
     </div>
-    <div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal adjustment-modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-backdrop" data-close-modal></div>
-      <div class="modal-card">
-        <button class="close-button" data-close-modal aria-label="關閉">×</button>
-        <p class="eyebrow" id="modalEyebrow">庫存異動</p>
-        <h2 id="modalTitle">調整庫存</h2>
-        <p class="modal-location" id="modalLocation"></p>
-        <div class="stepper"><button id="decreaseStep">−</button><strong id="stepValue">1</strong><button id="increaseStep">＋</button></div>
-        <label class="field-label">異動原因<select id="reasonSelect"><option>入庫補貨</option><option>維修使用</option></select></label>
-        <label class="field-label">備註（選填）<input id="noteInput" maxlength="2000" placeholder="可輸入寢室號碼" /></label>
-        <div class="modal-actions"><button class="secondary-button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment">確認異動</button></div>
+      <div class="modal-card adjustment-card">
+        <header class="adjustment-header">
+          <button class="adjustment-back" id="adjustmentBack" type="button" data-close-modal aria-label="返回找材料，取消本次異動"><img src="assets/icons/chevron-left.svg" alt="" width="24" height="24" /><span>找材料</span></button>
+          <div id="adjustmentAccountSlot"></div>
+        </header>
+        <form id="adjustmentForm" novalidate>
+          <div class="adjustment-body" id="adjustmentBody">
+            <section class="adjustment-intro">
+              <p class="adjustment-operation" id="modalEyebrow">維修領用</p>
+              <h2 id="modalTitle">調整庫存</h2>
+              <p class="adjustment-location"><img src="assets/icons/map-pin.svg" alt="" width="27" height="27" /><span id="modalLocation"></span></p>
+              <p class="adjustment-detail hidden" id="adjustmentDetail"></p>
+            </section>
+            <section class="adjustment-current" aria-label="目前庫存及警戒值">
+              <p class="adjustment-current-count"><span>現有</span><strong id="adjustmentStock">0</strong><span class="adjustment-unit"></span></p>
+              <div class="adjustment-warning"><p id="adjustmentThreshold"></p><small id="adjustmentStockStatus"></small></div>
+            </section>
+            <section class="adjustment-quantity">
+              <div class="adjustment-label-row"><label id="adjustmentQuantityLabel" for="stepValue">領用數量</label><span>可直接輸入數量</span></div>
+              <div class="adjustment-stepper">
+                <button id="decreaseStep" type="button" aria-label="減少異動數量"><img src="assets/icons/minus.svg" alt="" width="26" height="26" /></button>
+                <div class="adjustment-value"><input id="stepValue" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off" value="1" aria-describedby="adjustmentError adjustmentPreview" /><span class="adjustment-unit"></span></div>
+                <button id="increaseStep" type="button" aria-label="增加異動數量"><img src="assets/icons/plus.svg" alt="" width="26" height="26" /></button>
+              </div>
+              <p class="adjustment-error hidden" id="adjustmentError" role="alert"></p>
+              <div class="adjustment-preview" id="adjustmentPreview" aria-live="polite" aria-atomic="true"><div><span>原有數量</span><p><strong id="adjustmentBefore">0</strong> <span class="adjustment-unit"></span></p></div><img src="assets/icons/arrow-right.svg" alt="" width="29" height="29" /><div><span id="adjustmentAfterLabel">領用後數量</span><p><strong id="adjustmentAfter">0</strong> <span class="adjustment-unit" id="adjustmentAfterUnit"></span></p></div></div>
+            </section>
+            <section class="adjustment-reason">
+              <label class="adjustment-field-heading" for="reasonSelect">異動原因</label>
+              <div class="adjustment-select"><select id="reasonSelect"><option>維修使用</option><option>入庫補貨</option></select><img src="assets/icons/chevron-down.svg" alt="" width="20" height="20" /></div>
+              <p class="adjustment-hint" id="adjustmentReasonHint" aria-live="polite"></p>
+            </section>
+            <section class="adjustment-note"><label class="adjustment-field-heading" for="noteInput">備註（選填）</label><input id="noteInput" maxlength="2000" placeholder="可輸入寢室號碼" /></section>
+          </div>
+          <footer class="adjustment-footer"><div class="adjustment-actions"><button class="secondary-button" type="button" data-close-modal>取消</button><button class="primary-button" id="confirmAdjustment" type="submit">確認領用</button></div><p id="adjustmentSubmissionStatus" role="status">確認後才會更新庫存並記錄異動。</p></footer>
+        </form>
       </div>
     </div>
 
@@ -234,9 +261,9 @@
       <div class="modal-backdrop" data-cancel-logout></div><div class="modal-card"><h2 id="logoutTitle">確定登出這台裝置？</h2><p class="cloud-detail">雲端庫存、紀錄和其他裝置的登入不受影響；此裝置的舊資料仍會保留。</p><p id="logoutMessage" class="cloud-detail" role="alert"></p><div class="modal-actions"><button class="secondary-button" id="cancelLogout" type="button" data-cancel-logout>取消</button><button class="primary-button" id="confirmLogout" type="button">確定</button></div></div>
     </div>
     <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-    <script src="cloud-config.js?v=20261009-icons-location-order-1"></script>
+    <script src="cloud-config.js?v=20261010-material-adjustment-1"></script>
     <script src="vendor/supabase-2.117.3.js"></script>
-    <script src="cloud.js?v=20261009-icons-location-order-1"></script>
-    <script src="app.js?v=20261009-icons-location-order-1"></script>
+    <script src="cloud.js?v=20261010-material-adjustment-1"></script>
+    <script src="app.js?v=20261010-material-adjustment-1"></script>
   </body>
 </html>
