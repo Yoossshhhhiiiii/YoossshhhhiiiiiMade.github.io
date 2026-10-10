@@ -68,7 +68,6 @@ let deleteLocationReturnButton = 'deleteLocationFromFilter';
 let step = 1;
 let adjustmentSubmitting = false;
 let adjustmentReturnButton = null;
-const adjustmentAccountHome = document.getElementById('accountControl')?.parentElement;
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
 let lowStockOnly = false;
@@ -361,7 +360,8 @@ function openAdjustment(item, type) {
   $('stepValue').value = '1';
   $('reasonSelect').value = type === '增加庫存' ? '入庫補貨' : '維修使用';
   $('noteInput').value = '';
-  if (cloudEnabled && $('accountControl')) $('adjustmentAccountSlot').append($('accountControl'));
+  $('accountPopover').classList.add('hidden');
+  $('accountButton').setAttribute('aria-expanded', 'false');
   $('modal').classList.remove('hidden');
   document.body.classList.add('adjustment-open');
   document.querySelector('.app-shell').inert = true;
@@ -378,11 +378,6 @@ function closeAdjustment(force = false) {
   $('modal').classList.add('hidden');
   document.body.classList.remove('adjustment-open');
   document.querySelector('.app-shell').inert = false;
-  if (adjustmentAccountHome && $('accountControl').parentElement === $('adjustmentAccountSlot')) {
-    $('accountPopover').classList.add('hidden');
-    $('accountButton').setAttribute('aria-expanded', 'false');
-    adjustmentAccountHome.append($('accountControl'));
-  }
   activeMaterial = null;
   if (itemId != null) queueMicrotask(() => {
     const target = adjustmentReturnButton?.isConnected ? adjustmentReturnButton

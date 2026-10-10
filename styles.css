@@ -205,9 +205,8 @@ body.adjustment-open { overflow: hidden; }
 .adjustment-card.modal-card { display: flex; flex-direction: column; width: min(100%, 440px); height: min(840px, calc(var(--adjustment-viewport-height, 100dvh) - 40px)); max-height: none; padding: 0; overflow: hidden; }
 .adjustment-header { display: flex; justify-content: space-between; align-items: center; min-height: 56px; flex: 0 0 auto; padding: 6px 16px; border-bottom: 1px solid var(--line); }
 .adjustment-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; font-size: 18px; font-weight: 600; }
-.adjustment-header .account-button, .adjustment-header .account-avatar { width: 44px; height: 44px; }
-.adjustment-header .account-avatar .icon { width: 24px; height: 24px; }
-.adjustment-header .account-popover { max-height: calc(var(--adjustment-viewport-height, 100dvh) - 85px); }
+.adjustment-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 1px solid #dedede; border-radius: 50%; background: #f6f6f6; }
+.adjustment-close:hover:not(:disabled) { background: #ededed; }
 #adjustmentForm { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .adjustment-body { flex: 1; min-height: 0; padding: 22px 22px 18px; overflow-y: auto; overscroll-behavior: contain; scroll-padding: 14px; }
 .adjustment-operation { color: #555; font-size: 14px; line-height: 20px; font-weight: 500; }
@@ -257,7 +256,6 @@ body.adjustment-open { overflow: hidden; }
   #modal.adjustment-modal { padding: 0; top: var(--adjustment-viewport-top, 0); bottom: auto; height: var(--adjustment-viewport-height, 100dvh); }
   .adjustment-card.modal-card { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
   .adjustment-header { padding-top: max(6px, env(safe-area-inset-top)); }
-  .adjustment-header .account-popover { width: min(340px, calc(100vw - 32px)); right: 0; }
 }
 @media (max-width: 359px) {
   .adjustment-body { padding-left: 16px; padding-right: 16px; }
