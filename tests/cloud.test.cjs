@@ -224,17 +224,15 @@ test('Adjustment preview validates direct quantity, cancels safely, and submits 
   assert.equal(a.q('#adjustmentBefore').textContent, '12');
   assert.equal(a.q('#adjustmentAfter').textContent, '11');
   assert.equal(a.q('#confirmAdjustment').textContent, '確認領用 1 個');
-  assert.equal(a.q('#accountControl').parentElement.id, 'adjustmentAccountSlot');
+  assert.equal(a.q('#accountControl').parentElement.className, 'window-tools');
+  assert(!a.q('#modal').contains(a.q('#accountControl')), 'Account controls remain on the main page');
+  assert.equal(a.q('#adjustmentClose').getAttribute('aria-label'), '關閉視窗，取消本次異動');
   assert.equal(a.q('.app-shell').inert, true);
   assert.equal(a.w.document.activeElement.id, 'adjustmentBack', 'Opening must not summon the input keyboard');
   a.change('#stepValue', '3', 'input'); a.change('#noteInput', '315');
   assert.equal(a.q('#adjustmentAfter').textContent, '9');
-  a.click('#accountButton');
-  a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  assert(a.q('#accountPopover').classList.contains('hidden'));
-  assert(!a.q('#modal').classList.contains('hidden'), 'Escape from the account menu keeps the unsent draft');
-  assert.equal(a.q('#stepValue').value, '3');
-  a.click('#adjustmentBack');
+  a.click('#adjustmentClose');
+  assert(a.q('#modal').classList.contains('hidden'));
   assert.equal(a.server().materials[0].stock, 12);
   assert.equal(a.q('#accountControl').parentElement.className, 'window-tools');
   assert.equal(a.q('.app-shell').inert, false);
@@ -291,6 +289,35 @@ test('Open adjustment revalidates the latest snapshot, empty units, unset alert,
   a.assertLegacy(); a.w.close();
 });
 
+test('Adjustment X closes consumption and restocking drafts without writes, resets drafts, and preserves account controls', async () => {
+  const a = setup(); await tick();
+  const originalAccountParent = a.q('#accountControl').parentElement;
+  for (const action of ['minus', 'plus']) {
+    const selector = `[data-action="${action}"]`;
+    const trigger = a.q(selector);
+    trigger.focus(); a.click(selector);
+    assert.equal(a.q('#stepValue').value, '1');
+    assert.equal(a.q('#noteInput').value, '');
+    a.change('#stepValue', '3', 'input'); a.change('#noteInput', '315');
+    a.click('#adjustmentClose'); await tick();
+    assert(a.q('#modal').classList.contains('hidden'));
+    assert.equal(a.q('.app-shell').inert, false);
+    assert(!a.w.document.body.classList.contains('adjustment-open'));
+    assert.equal(a.w.document.activeElement, trigger);
+    assert.equal(a.q('#accountControl').parentElement, originalAccountParent);
+    assert.equal(a.server().materials[0].stock, 12);
+    assert.equal(a.server().transactions.length, 0);
+  }
+  a.click('[data-action="minus"]');
+  a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert(a.q('#modal').classList.contains('hidden'), 'Escape still closes the modal');
+  a.click('#accountButton'); assert(!a.q('#accountPopover').classList.contains('hidden'));
+  a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert(a.q('#accountPopover').classList.contains('hidden'), 'Main page account menu still works');
+  assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  a.assertLegacy(); a.w.close();
+});
+
 test('Adjustment submission locks its draft until server confirmation and auth revocation clears it', async () => {
   const a = setup(); await tick();
   let response;
@@ -298,7 +325,8 @@ test('Adjustment submission locks its draft until server confirmation and auth r
     ? Promise.resolve({ data: structuredClone(a.server()), error: null })
     : new Promise(resolve => { response = resolve; }));
   a.click('[data-action="minus"]'); a.click('#confirmAdjustment');
-  for (const id of ['stepValue', 'noteInput', 'reasonSelect', 'decreaseStep', 'increaseStep', 'adjustmentBack', 'confirmAdjustment']) assert(a.q(`#${id}`).disabled, id);
+  for (const id of ['stepValue', 'noteInput', 'reasonSelect', 'decreaseStep', 'increaseStep', 'adjustmentBack', 'adjustmentClose', 'confirmAdjustment']) assert(a.q(`#${id}`).disabled, id);
+  a.click('#adjustmentClose'); assert(!a.q('#modal').classList.contains('hidden'));
   a.click('#adjustmentBack'); assert(!a.q('#modal').classList.contains('hidden'));
   a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert(!a.q('#modal').classList.contains('hidden'));
