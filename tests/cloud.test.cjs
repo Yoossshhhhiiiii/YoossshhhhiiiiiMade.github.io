@@ -217,6 +217,100 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
     handler: value => { handler = value; }, server: () => server, callback: value => callback('SIGNED_OUT', value) };
 }
 
+test('Adjustment preview validates direct quantity, cancels safely, and submits reason-aligned cloud changes', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]');
+  assert.equal(a.q('#modalTitle').textContent, '手機材料');
+  assert.equal(a.q('#adjustmentBefore').textContent, '12');
+  assert.equal(a.q('#adjustmentAfter').textContent, '11');
+  assert.equal(a.q('#confirmAdjustment').textContent, '確認領用 1 個');
+  assert.equal(a.q('#accountControl').parentElement.id, 'adjustmentAccountSlot');
+  assert.equal(a.q('.app-shell').inert, true);
+  assert.equal(a.w.document.activeElement.id, 'adjustmentBack', 'Opening must not summon the input keyboard');
+  a.change('#stepValue', '3', 'input'); a.change('#noteInput', '315');
+  assert.equal(a.q('#adjustmentAfter').textContent, '9');
+  a.click('#accountButton');
+  a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert(a.q('#accountPopover').classList.contains('hidden'));
+  assert(!a.q('#modal').classList.contains('hidden'), 'Escape from the account menu keeps the unsent draft');
+  assert.equal(a.q('#stepValue').value, '3');
+  a.click('#adjustmentBack');
+  assert.equal(a.server().materials[0].stock, 12);
+  assert.equal(a.q('#accountControl').parentElement.className, 'window-tools');
+  assert.equal(a.q('.app-shell').inert, false);
+  assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  a.click('[data-action="minus"]');
+  for (const value of ['', '0', '-1', '1.5', 'abc', '1e2', '2147483648', '13']) {
+    a.change('#stepValue', value, 'input');
+    assert(a.q('#confirmAdjustment').disabled, value);
+    assert.equal(a.q('#adjustmentAfter').textContent, '待確認');
+    a.q('#adjustmentForm').dispatchEvent(new a.w.Event('submit', { bubbles: true, cancelable: true }));
+    assert(!a.calls.some(call => call.name === 'warehouse_mutate'), value);
+  }
+  a.change('#stepValue', '13', 'input'); a.change('#reasonSelect', '入庫補貨');
+  assert.equal(a.q('#adjustmentQuantityLabel').textContent, '補貨數量');
+  assert.equal(a.q('#adjustmentAfter').textContent, '25');
+  assert(!a.q('#confirmAdjustment').disabled);
+  a.change('#stepValue', '3', 'input'); a.change('#noteInput', '315');
+  a.click('#confirmAdjustment'); await tick();
+  const request = a.calls.find(call => call.name === 'warehouse_mutate');
+  assert.equal(request.params.p_payload.amount, 3);
+  assert.equal(request.params.p_payload.reason, '入庫補貨');
+  assert.equal(request.params.p_payload.note, '315');
+  assert.equal(a.server().materials[0].stock, 15);
+  a.click('[data-action="plus"]'); a.change('#reasonSelect', '維修使用');
+  a.change('#stepValue', '2', 'input'); a.click('#confirmAdjustment'); await tick();
+  const deduction = a.calls.filter(call => call.name === 'warehouse_mutate').at(-1);
+  assert.equal(deduction.params.p_payload.amount, -2);
+  assert.equal(deduction.params.p_payload.reason, '維修使用');
+  assert.equal(deduction.params.p_payload.note, '', 'Notes stay optional');
+  assert.equal(a.server().materials[0].stock, 13);
+  a.assertLegacy(); a.w.close();
+});
+
+test('Open adjustment revalidates the latest snapshot, empty units, unset alert, zero stock and stock overflow', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]'); a.change('#stepValue', '10', 'input');
+  a.server().materials[0].stock = 4; await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#adjustmentBefore').textContent, '4');
+  assert(a.q('#confirmAdjustment').disabled, 'Cannot use the stock captured when the modal was opened');
+  assert.match(a.q('#adjustmentError').textContent, /4 個/);
+  a.server().materials[0].spec = '／'; a.server().materials[0].alert = null;
+  a.server().materials[0].stock = 0; await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#adjustmentThreshold').textContent, '尚未設定警戒值');
+  assert([...a.w.document.querySelectorAll('.adjustment-unit')].every(element => element.textContent === ''));
+  a.change('#reasonSelect', '入庫補貨'); a.change('#stepValue', '1', 'input');
+  assert.equal(a.q('#adjustmentAfter').textContent, '1'); assert(!a.q('#confirmAdjustment').disabled);
+  a.click('#increaseStep'); assert.equal(a.q('#stepValue').value, '2');
+  a.click('#decreaseStep'); assert.equal(a.q('#stepValue').value, '1'); assert(a.q('#decreaseStep').disabled);
+  a.server().materials[0].stock = 2147483647; await a.w.InventoryCloud.refresh();
+  assert(a.q('#confirmAdjustment').disabled); assert.match(a.q('#adjustmentError').textContent, /過大/);
+  a.change('#reasonSelect', '維修使用'); assert(!a.q('#confirmAdjustment').disabled);
+  a.server().materials = []; await a.w.InventoryCloud.refresh();
+  assert(a.q('#confirmAdjustment').disabled); assert.match(a.q('#adjustmentError').textContent, /移除/);
+  a.assertLegacy(); a.w.close();
+});
+
+test('Adjustment submission locks its draft until server confirmation and auth revocation clears it', async () => {
+  const a = setup(); await tick();
+  let response;
+  a.handler((name) => name === 'warehouse_snapshot'
+    ? Promise.resolve({ data: structuredClone(a.server()), error: null })
+    : new Promise(resolve => { response = resolve; }));
+  a.click('[data-action="minus"]'); a.click('#confirmAdjustment');
+  for (const id of ['stepValue', 'noteInput', 'reasonSelect', 'decreaseStep', 'increaseStep', 'adjustmentBack', 'confirmAdjustment']) assert(a.q(`#${id}`).disabled, id);
+  a.click('#adjustmentBack'); assert(!a.q('#modal').classList.contains('hidden'));
+  a.w.document.dispatchEvent(new a.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert(!a.q('#modal').classList.contains('hidden'));
+  a.callback(null); await new Promise(resolve => setTimeout(resolve, 5));
+  assert(a.q('#modal').classList.contains('hidden'), 'Revocation cannot leave old material visible');
+  assert.equal(a.q('.app-shell').inert, false);
+  assert.equal(a.q('#accountControl').parentElement.className, 'window-tools');
+  response({ data: null, error: { message: 'session changed', code: '' } }); await tick();
+  assert.equal(a.q('#materialCount').textContent, '0');
+  a.assertLegacy(); a.w.close();
+});
+
 test('Cloud mode preserves original device data, blocks signed-out edits, handles SDK failure', async () => {
   const a = setup({ authenticated: false }); await tick();
   assert.equal(a.q('#materialCount').textContent, '0');
