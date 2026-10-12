@@ -137,8 +137,191 @@ test('Stale archive, offline archive and unknown-result retry never remove or du
   a.assertLegacy(); a.w.close();
 });
 
+test('Statistics calendar ranges include leap months, year-crossing Monday weeks, DST and year bounds', async () => {
+  const a = setup(); await tick();
+  const range = (mode, value) => JSON.parse(JSON.stringify(a.w.statsPeriodRange(mode, value)));
+  assert.deepEqual(range('month', '2024-02'), { start: '2024-02-01', end: '2024-02-29' });
+  assert.deepEqual(range('month', '2025-02'), { start: '2025-02-01', end: '2025-02-28' });
+  assert.deepEqual(range('month', '2026-12'), { start: '2026-12-01', end: '2026-12-31' });
+  assert.deepEqual(range('month', '0001-01'), { start: '0001-01-01', end: '0001-01-31' });
+  assert.deepEqual(range('week', '2025-01-01'), { start: '2024-12-30', end: '2025-01-05' });
+  assert.deepEqual(range('week', '2025-01-05'), { start: '2024-12-30', end: '2025-01-05' });
+  assert.deepEqual(range('week', '2025-01-06'), { start: '2025-01-06', end: '2025-01-12' });
+  assert.deepEqual(range('week', '2026-03-08'), { start: '2026-03-02', end: '2026-03-08' });
+  for (const [mode, value] of [['month',''], ['month','2026-13'], ['month','2026-2'], ['month','0000-01'], ['week','2025-02-29'], ['week','2026-02-30'], ['week','bad']]) assert.equal(a.w.statsPeriodRange(mode, value), null);
+  a.w.close();
+});
+
+test('Statistics month/week navigation preserves custom dates and filters material, reason, note without mutations', async () => {
+  const a = setup(); await tick();
+  const event = (day, amount, type, note) => ({ id: a.w.crypto.randomUUID(), materialId: 1, materialName: '手機材料', unit: '個', amount, type, reason: type === '增加' ? '入庫補貨' : '維修使用', note, time: new Date(`${day}T12:00:00`).toISOString(), version: 1, editHistory: [] });
+  a.server().transactions = [event('2024-12-29', 10, '減少', '周前排除'), event('2024-12-30', 2, '減少', '跨年周'), event('2025-01-05', 3, '減少', '周末315'), event('2025-01-05', 4, '增加', '補貨'), event('2025-01-06', 7, '減少', '下周'), event('2025-02-01', 8, '減少', '次月')];
+  await a.w.InventoryCloud.refresh(); a.click('#statsButton');
+  const beforeStock = a.server().materials[0].stock;
+  a.change('#statsMonthInput', '2025-01');
+  assert.equal(a.q('#statsStartDate').value, '2025-01-01'); assert.equal(a.q('#statsEndDate').value, '2025-01-31');
+  assert.equal(a.q('#statsHeading').textContent, '月統計');
+  assert.match(a.q('#usageBreakdown').textContent, /10 個/); assert.equal(a.q('#rangeUsage').textContent, '2 筆'); assert.equal(a.q('#rangeRestock').textContent, '1 筆');
+  assert.match(a.q('#rangeTransactions').textContent, /周末315/); assert.match(a.q('#rangeTransactions').textContent, /入庫補貨/); assert.doesNotMatch(a.q('#rangeTransactions').textContent, /跨年周|次月/);
+  a.click('#statsPreviousPeriod'); assert.equal(a.q('#statsMonthInput').value, '2024-12');
+  a.click('#statsNextPeriod'); assert.equal(a.q('#statsMonthInput').value, '2025-01');
+  a.click('[data-stats-mode="week"]'); a.change('#statsWeekInput', '2025-01-01');
+  assert.equal(a.q('#statsHeading').textContent, '周統計');
+  assert.equal(a.q('#statsStartDate').value, '2024-12-30'); assert.equal(a.q('#statsEndDate').value, '2025-01-05');
+  assert.match(a.q('#usageBreakdown').textContent, /5 個/); assert.match(a.q('#statsPeriodLabel').textContent, /週一至週日/);
+  assert.doesNotMatch(a.q('#rangeTransactions').textContent, /周前排除|下周/);
+  a.click('#statsNextPeriod'); assert.equal(a.q('#statsStartDate').value, '2025-01-06'); assert.equal(a.q('#statsEndDate').value, '2025-01-12'); assert.match(a.q('#usageBreakdown').textContent, /7 個/);
+  a.click('[data-stats-mode="custom"]'); a.change('#statsStartDate', '2025-01-05'); a.change('#statsEndDate', '2025-01-06');
+  assert.match(a.q('#usageBreakdown').textContent, /10 個/);
+  a.click('[data-stats-mode="month"]'); a.click('[data-stats-mode="custom"]');
+  assert.equal(a.q('#statsStartDate').value, '2025-01-05'); assert.equal(a.q('#statsEndDate').value, '2025-01-06');
+  a.change('#statsStartDate', '2025-02-02'); assert(!a.q('#statsRangeError').classList.contains('hidden'));
+  a.click('[data-stats-mode="month"]'); a.change('#statsMonthInput', '0001-01'); assert(a.q('#statsPreviousPeriod').disabled);
+  a.change('#statsMonthInput', '9999-12'); assert(a.q('#statsNextPeriod').disabled);
+  a.change('#statsMonthInput', ''); assert(!a.q('#statsRangeError').classList.contains('hidden')); assert(a.q('#statsNextPeriod').disabled);
+  a.click('#statsCurrentPeriod'); assert(a.q('#statsRangeError').classList.contains('hidden'));
+  assert.equal(a.server().materials[0].stock, beforeStock); assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  assert(!a.q('#rangeTransactions [data-edit-transaction]'));
+  a.assertLegacy(); a.w.close();
+});
+
+test('Today edit occupies its own central grid cell and remains bound to the same event', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]'); a.click('#confirmAdjustment'); await tick();
+  const card = a.q('#todayTransactions .transaction-card-editable');
+  const button = card.querySelector('[data-edit-transaction]');
+  assert.equal(button.parentElement, card); assert(card.querySelector('.transaction-content .transaction-note'));
+  assert(card.querySelector(':scope > .transaction-amount')); assert(!card.querySelector('.transaction-tools'));
+  a.click('#todayTransactions [data-edit-transaction]'); assert(!a.q('#transactionEditModal').classList.contains('hidden'));
+  a.click('#closeTransactionEdit'); assert(a.q('#transactionEditModal').classList.contains('hidden'));
+  a.assertLegacy(); a.w.close();
+});
+
+test('Today edit corrects the original event by its difference, updates totals, keeps time, and retains audit', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]'); a.change('#stepValue', '3', 'input'); a.change('#noteInput', '315'); a.click('#confirmAdjustment'); await tick();
+  const original = structuredClone(a.server().transactions[0]);
+  assert.equal(a.server().materials[0].stock, 9);
+  assert.equal(a.q('#monthlyUsage').textContent, '3');
+  assert(a.q('#todayTransactions [data-edit-transaction]'));
+  assert(!a.q('#rangeTransactions [data-edit-transaction]'), 'Only today receives edit buttons');
+  a.click('#todayTransactions [data-edit-transaction]');
+  assert.equal(a.q('#transactionEditQuantity').value, '3'); assert.equal(a.q('#transactionEditNote').value, '315');
+  assert(a.q('#saveTransactionEdit').disabled, 'Unchanged drafts cannot create meaningless corrections');
+  assert.equal(a.w.document.activeElement.id, 'closeTransactionEdit');
+  a.change('#transactionEditQuantity', '2', 'input'); a.change('#transactionEditNote', '316', 'input');
+  assert.match(a.q('#transactionEditAfter').textContent, /10/); assert.match(a.q('#transactionEditDelta').textContent, /補回庫存 1 個/);
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'edit_transaction').length, 0, 'Preview never writes');
+  a.click('#saveTransactionEdit'); await tick();
+  const edited = a.server().transactions[0];
+  assert.equal(a.server().materials[0].stock, 10); assert.equal(a.server().transactions.length, 1);
+  assert.equal(edited.amount, 2); assert.equal(edited.note, '316'); assert.equal(edited.time, original.time); assert.equal(edited.id, original.id);
+  assert.equal(edited.editHistory.length, 1); assert.equal(edited.editHistory[0].before.note, '315');
+  assert.equal(a.q('#monthlyUsage').textContent, '2'); assert.match(a.q('#todayTransactions').textContent, /已修正 1 次/);
+  a.q('#todayTransactions details').open = true; await a.w.InventoryCloud.refresh();
+  assert(a.q('#todayTransactions details').open, 'Periodic refresh preserves an opened audit history');
+  assert.match(a.q('#rangeTransactions').textContent, /316/); assert(a.q('#transactionEditModal').classList.contains('hidden'));
+  a.click('#todayTransactions [data-edit-transaction]'); a.change('#transactionEditQuantity', '8', 'input');
+  a.click('#closeTransactionEdit'); assert.equal(a.server().materials[0].stock, 10); assert.equal(edited.editHistory.length, 1);
+  a.assertLegacy(); a.w.close();
+});
+
+test('Today edit switches signed direction, prevents invalid numbers and revalidates other-device stock or event changes', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]'); a.change('#stepValue', '3', 'input'); a.click('#confirmAdjustment'); await tick();
+  a.click('#todayTransactions [data-edit-transaction]');
+  for (const quantity of ['', '0', '-1', '1.5', 'x', '1e2', '2147483648', '13']) {
+    a.change('#transactionEditQuantity', quantity, 'input'); assert(a.q('#saveTransactionEdit').disabled, quantity);
+    a.q('#transactionEditForm').dispatchEvent(new a.w.Event('submit', { bubbles: true, cancelable: true }));
+  }
+  assert.equal(a.calls.filter(call => call.params?.p_operation === 'edit_transaction').length, 0);
+  a.change('#transactionEditQuantity', '4', 'input'); a.change('#transactionEditReason', '入庫補貨');
+  assert.match(a.q('#transactionEditAfter').textContent, /16/); assert.match(a.q('#transactionEditDelta').textContent, /補回庫存 7 個/);
+  a.click('#saveTransactionEdit'); await tick();
+  assert.equal(a.server().materials[0].stock, 16); assert.equal(a.server().transactions[0].type, '增加'); assert.equal(a.q('#monthlyUsage').textContent, '0');
+  a.click('#todayTransactions [data-edit-transaction]'); a.change('#transactionEditQuantity', '5', 'input');
+  a.server().materials[0].stock = 2147483647; await a.w.InventoryCloud.refresh();
+  assert(a.q('#saveTransactionEdit').disabled); assert.match(a.q('#transactionEditError').textContent, /範圍/);
+  a.server().materials[0].stock = 1; await a.w.InventoryCloud.refresh();
+  a.change('#transactionEditQuantity', '1', 'input');
+  assert(a.q('#saveTransactionEdit').disabled); assert.match(a.q('#transactionEditError').textContent, /不足/);
+  a.change('#transactionEditQuantity', '4', 'input'); a.change('#transactionEditNote', '新備註', 'input');
+  a.server().transactions[0].version++; await a.w.InventoryCloud.refresh();
+  assert(a.q('#saveTransactionEdit').disabled); assert.match(a.q('#transactionEditError').textContent, /其他裝置/);
+  assert.equal(a.q('#transactionEditNote').value, '新備註', 'Conflict does not silently replace draft');
+  a.server().materials = []; await a.w.InventoryCloud.refresh();
+  assert(a.q('#saveTransactionEdit').disabled); assert.match(a.q('#transactionEditError').textContent, /封存/);
+  a.assertLegacy(); a.w.close();
+});
+
+test('Today edit never writes optimistically; pending retry uses one identity and signs out safely', async () => {
+  const a = setup(); await tick();
+  a.click('[data-action="minus"]'); a.click('#confirmAdjustment'); await tick();
+  a.click('#todayTransactions [data-edit-transaction]'); a.change('#transactionEditNote', '316', 'input');
+  let response;
+  a.handler(name => name === 'warehouse_snapshot' ? Promise.resolve({ data: structuredClone(a.server()), error: null }) : new Promise(resolve => { response = resolve; }));
+  a.click('#saveTransactionEdit');
+  for (const id of ['transactionEditQuantity', 'transactionEditReason', 'transactionEditNote', 'saveTransactionEdit', 'closeTransactionEdit']) assert(a.q(`#${id}`).disabled, id);
+  a.click('#closeTransactionEdit'); assert(!a.q('#transactionEditModal').classList.contains('hidden'));
+  assert.equal(a.server().transactions[0].note, '');
+  a.callback(null); await new Promise(resolve => setTimeout(resolve, 5));
+  assert(a.q('#transactionEditModal').classList.contains('hidden')); assert.equal(a.q('#transactionEditNote').value, '');
+  response({ data: null, error: { message: 'session changed', code: '' } }); await tick();
+  assert.equal(a.q('#materialCount').textContent, '0'); a.assertLegacy(); a.w.close();
+
+  const b = setup(); await tick();
+  b.click('[data-action="minus"]'); b.change('#stepValue', '3', 'input'); b.click('#confirmAdjustment'); await tick();
+  b.click('#todayTransactions [data-edit-transaction]'); b.change('#transactionEditQuantity', '2', 'input');
+  b.handler((name, params) => {
+    if (name === 'warehouse_snapshot') return Promise.resolve({ data: structuredClone(b.server()), error: null });
+    if (params.p_operation === 'edit_transaction') {
+      if (b.server().transactions[0].version === 1) { b.server().transactions[0].version = 2; b.server().transactions[0].amount = 2; b.server().materials[0].stock = 10; b.server().revision++; }
+      return Promise.resolve({ data: null, error: { message: 'Failed to fetch', code: '' } });
+    }
+  });
+  b.click('#saveTransactionEdit'); await tick();
+  assert(!b.q('#transactionEditModal').classList.contains('hidden')); assert(b.q('#saveTransactionEdit').disabled);
+  const initialRequest = b.calls.filter(call => call.params?.p_operation === 'edit_transaction')[0];
+  assert.equal(b.q('#transactionEditBefore').textContent, '9 個', 'Lost response does not optimistically show corrected stock');
+  b.handler(() => Promise.resolve({ data: structuredClone(b.server()), error: null }));
+  b.click('#cloudRetryButton'); await tick();
+  const retry = b.calls.filter(call => call.params?.p_operation === 'edit_transaction').at(-1);
+  assert.equal(retry.params.p_request_id, initialRequest.params.p_request_id);
+  assert.equal(b.q('#transactionEditModal').classList.contains('hidden'), true); assert.equal(b.server().materials[0].stock, 10);
+  b.assertLegacy(); b.w.close();
+});
+
+test('Older cloud databases disable transaction editing without fallback or permission changes', async () => {
+  const a = setup({ transactionEdit: false }); await tick();
+  a.click('[data-action="minus"]'); a.click('#confirmAdjustment'); await tick();
+  const button = a.q('#todayTransactions [data-edit-transaction]');
+  assert(button.disabled); assert.match(button.title, /尚未啟用/);
+  a.click('#todayTransactions [data-edit-transaction]'); assert(a.q('#transactionEditModal').classList.contains('hidden'));
+  assert(!a.calls.some(call => call.params?.p_operation === 'edit_transaction')); a.assertLegacy(); a.w.close();
+});
+
+test('Local legacy transaction correction retains event time and audit across reload', async () => {
+  const dom = new JSDOM(html, { url: 'https://preview.example.test/', runScripts: 'outside-only', pretendToBeVisual: true });
+  const w = dom.window; w.document.documentElement.dataset.storageMode = 'local';
+  w.localStorage.setItem('inventory-materials', JSON.stringify(phone.materials));
+  w.localStorage.setItem('inventory-transactions', JSON.stringify(phone.transactions));
+  w.localStorage.setItem('inventory-first-floor-photo-import-2026-09-29-v1', 'done');
+  w.eval(app);
+  w.document.querySelector('[data-edit-transaction]').click();
+  const input = w.document.getElementById('transactionEditQuantity'); input.value = '2'; input.dispatchEvent(new w.Event('input'));
+  w.document.getElementById('saveTransactionEdit').click(); await tick();
+  const saved = JSON.parse(w.localStorage.getItem('inventory-transactions'));
+  assert.equal(JSON.parse(w.localStorage.getItem('inventory-materials'))[0].stock, 8);
+  assert.equal(saved[0].time, phone.transactions[0].time); assert.equal(saved[0].version, 2); assert.equal(saved[0].editHistory.length, 1);
+  const reloaded = new JSDOM(html, { url: 'https://preview.example.test/', runScripts: 'outside-only' });
+  reloaded.window.document.documentElement.dataset.storageMode = 'local';
+  for (const key of ['inventory-materials', 'inventory-transactions', 'inventory-first-floor-photo-import-2026-09-29-v1']) reloaded.window.localStorage.setItem(key, w.localStorage.getItem(key));
+  reloaded.window.eval(app); assert.match(reloaded.window.document.getElementById('todayTransactions').textContent, /已修正 1 次/);
+  w.close(); reloaded.window.close();
+});
+
 function setup({ authenticated = true, initialized = true, sdk = true, legacy = phone,
-  accountSession = session, authError = null, configOverride = null } = {}) {
+  accountSession = session, authError = null, configOverride = null, transactionEdit = true } = {}) {
   const dom = new JSDOM(html, { url: 'https://yoossshhhhiiiii.github.io/YoossshhhhiiiiiMade.github.io/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.HTMLElement.prototype.scrollIntoView = () => {};
@@ -152,7 +335,7 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
   };
   for (const [key, value] of Object.entries(raw)) w.localStorage.setItem(key, value);
   w.localStorage.setItem('inventory-first-floor-photo-import-2026-09-29-v1', 'done');
-  let server = { initialized, revision: initialized ? 1 : 0, canImport: true, materials: initialized ? [{ ...phone.materials[0], stock: 12, version: 1 }] : [], locations: initialized ? ['3樓315'] : [], transactions: [] };
+  let server = { initialized, revision: initialized ? 1 : 0, canImport: true, features: { transactionEdit }, materials: initialized ? [{ ...phone.materials[0], stock: 12, version: 1 }] : [], locations: initialized ? ['3樓315'] : [], transactions: [] };
   let callback;
   let handler;
   const calls = [];
@@ -177,9 +360,22 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
           if (params.p_operation === 'adjust_stock') {
             server.materials[0].stock += payload.amount;
             server.materials[0].version++;
-            server.transactions.push({ ...phone.transactions[0], amount: Math.abs(payload.amount), type: payload.amount > 0 ? '增加' : '減少', note: payload.note, reason: payload.reason });
+            server.transactions.push({ ...phone.transactions[0], id: w.crypto.randomUUID(), version: 1, editHistory: [], amount: Math.abs(payload.amount), type: payload.amount > 0 ? '增加' : '減少', note: payload.note, reason: payload.reason });
+          } else if (params.p_operation === 'edit_transaction') {
+            const record = server.transactions.find(record => record.id === payload.transactionId);
+            if (!record) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_TRANSACTION_NOT_FOUND' } };
+            if (record.version !== payload.version) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_TRANSACTION_EDIT_CONFLICT' } };
+            const item = server.materials.find(item => item.id === record.materialId);
+            if (!item) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_MATERIAL_NOT_FOUND' } };
+            const type = payload.reason === '入庫補貨' ? '增加' : '減少';
+            const delta = (type === '增加' ? payload.quantity : -payload.quantity) - (record.type === '增加' ? record.amount : -record.amount);
+            if (item.stock + delta < 0) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_INSUFFICIENT_STOCK' } };
+            const before = { amount: record.amount, type: record.type, reason: record.reason, note: record.note, version: record.version };
+            const after = { amount: payload.quantity, type, reason: payload.reason, note: payload.note, version: record.version + 1 };
+            record.editHistory.push({ time: new Date().toISOString(), before, after, stockBefore: item.stock, stockAfter: item.stock + delta });
+            Object.assign(record, after); item.stock += delta; item.version++;
           } else if (params.p_operation === 'import_phone') {
-            server = { ...payload, canImport: true, initialized: true, revision: server.revision, materials: payload.materials.map(item => ({ ...item, version: 1 })) };
+            server = { ...payload, canImport: true, initialized: true, revision: server.revision, features: { transactionEdit }, materials: payload.materials.map(item => ({ ...item, version: 1 })), transactions: payload.transactions.map(record => ({ ...record, id: w.crypto.randomUUID(), version: 1, editHistory: [] })) };
           } else if (params.p_operation === 'add_location') server.locations.push(payload.name);
           else if (params.p_operation === 'delete_location') {
             if (server.materials.some(item => item.location === payload.name)) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_LOCATION_IN_USE' } };
@@ -518,7 +714,7 @@ test('Cloud location and material forms retain optional detail, pagination, room
   assert.match(a.q('#todayTransactions').textContent, /315/);
   a.click('[data-view="stats"]'); assert.match(a.q('#rangeTransactions').textContent, /315/);
   assert.equal(a.q('#noteInput').placeholder, '可輸入寢室號碼');
-  a.change('#statsStartDate', '2026-12-31'); a.change('#statsEndDate', '2026-01-01'); assert(!a.q('#statsRangeError').classList.contains('hidden'));
+  a.click('[data-stats-mode="custom"]'); a.change('#statsStartDate', '2026-12-31'); a.change('#statsEndDate', '2026-01-01'); assert(!a.q('#statsRangeError').classList.contains('hidden'));
   a.assertLegacy(); a.w.close();
 });
 
