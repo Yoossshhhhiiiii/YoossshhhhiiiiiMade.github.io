@@ -68,6 +68,12 @@ let deleteLocationReturnButton = 'deleteLocationFromFilter';
 let step = 1;
 let adjustmentSubmitting = false;
 let adjustmentReturnButton = null;
+let editingTransactionKey = null;
+let editingTransactionVersion = null;
+let transactionEditSubmitting = false;
+let transactionEditingAvailable = !cloudEnabled;
+let statsMode = 'month';
+let statsCustomRange = null;
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
 let lowStockOnly = false;
@@ -116,6 +122,10 @@ function renderAccessControls() {
   for (const control of document.querySelectorAll('[data-cancel-delete-material]')) control.disabled = !!window.InventoryCloud?.status().busy;
   renderDeleteLocationState();
   if (activeMaterial) renderAdjustment();
+  if (editingTransactionKey) renderTransactionEdit();
+  document.querySelectorAll('#todayTransactions [data-edit-transaction]').forEach(button => {
+    button.disabled = disabled || !transactionEditingAvailable || !materials.some(item => String(item.id) === button.dataset.materialId);
+  });
   document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
 }
 
@@ -130,10 +140,10 @@ function displaySpec(item) {
   return `${category || '分類待設定'}／${unit || '單位待設定'}`;
 }
 function formatNumber(number) { return new Intl.NumberFormat('zh-TW').format(number); }
-function localMonth(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
+function localMonth(date = new Date()) { return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}`; }
 function localDateKey(date = new Date()) {
   if (Number.isNaN(date.getTime())) return '';
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function transactionMaterial(record) {
@@ -141,22 +151,45 @@ function transactionMaterial(record) {
   return { name: record.materialName || item?.name || `材料 #${record.materialId}`, unit: record.unit ?? (item ? unitOf(item) : '') };
 }
 
-function transactionCard(record) {
+function transactionKey(record) {
+  return record.id ? String(record.id) : `local-${transactions.indexOf(record)}`;
+}
+
+function transactionCard(record, editable = false) {
   const { name, unit } = transactionMaterial(record);
   const date = new Date(record.time);
   const time = Number.isNaN(date.getTime()) ? '日期不明' : new Intl.DateTimeFormat('zh-TW', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
   }).format(date);
   const adding = record.type === '增加';
+  const amount = `<span class="transaction-amount ${adding ? 'added' : 'used'}">${adding ? '＋' : '−'}${formatNumber(record.amount)}${unit ? ` ${escapeHTML(unit)}` : ''}</span>`;
+  const edit = editable ? `<button class="edit-button transaction-edit-button" type="button" data-edit-transaction="${escapeHTML(transactionKey(record))}" data-material-id="${record.materialId}" aria-label="編輯 ${escapeHTML(name)} ${escapeHTML(time)} 異動紀錄" title="${!transactionEditingAvailable ? '雲端更正功能尚未啟用' : !materials.some(item => item.id === record.materialId) ? '材料已封存，不能更正庫存' : '更正這筆異動的數量、原因與備註'}" ${!canModifyInventory() || !transactionEditingAvailable || !materials.some(item => item.id === record.materialId) ? 'disabled' : ''}>編輯</button>` : '';
   return `
-    <article class="transaction-card">
+    <article class="transaction-card ${editable ? 'transaction-card-editable' : ''}">
+      <div class="transaction-content">
       <div class="transaction-main">
         <div><span class="transaction-time">${escapeHTML(time)}</span><strong>${escapeHTML(name)}</strong></div>
-        <span class="transaction-amount ${adding ? 'added' : 'used'}">${adding ? '＋' : '−'}${formatNumber(record.amount)}${unit ? ` ${escapeHTML(unit)}` : ''}</span>
+        ${editable ? '' : `<div class="transaction-tools">${amount}</div>`}
       </div>
       <div class="transaction-meta">異動：${adding ? '增加庫存' : '減少庫存'} · 原因：${escapeHTML(record.reason || '未填寫')}</div>
       <div class="transaction-note">備註：${escapeHTML(record.note || '無')}</div>
+      </div>
+      ${editable ? `${edit}${amount}` : ''}
+      ${transactionHistory(record)}
     </article>`;
+}
+
+function transactionHistory(record) {
+  if (!Array.isArray(record.editHistory) || !record.editHistory.length) return '';
+  const amountText = value => `${value.type === '增加' ? '增加' : '減少'} ${formatNumber(value.amount)}${record.unit ? ` ${record.unit}` : ''}`;
+  return `<details class="transaction-history" data-history-key="${escapeHTML(transactionKey(record))}"><summary>已修正 ${record.editHistory.length} 次 · 查看修正紀錄</summary>${record.editHistory.map(edit => `<div class="transaction-history-entry"><p>${escapeHTML(new Date(edit.time).toLocaleString('zh-TW'))}</p><p>${escapeHTML(amountText(edit.before))} → ${escapeHTML(amountText(edit.after))}；${escapeHTML(edit.before.reason)} → ${escapeHTML(edit.after.reason)}</p><p>備註：${escapeHTML(edit.before.note || '無')} → ${escapeHTML(edit.after.note || '無')}</p></div>`).join('')}</details>`;
+}
+
+function renderTransactionList(id, html) {
+  const list = $(id);
+  const open = new Set([...list.querySelectorAll('details[open][data-history-key]')].map(detail => detail.dataset.historyKey));
+  list.innerHTML = html;
+  list.querySelectorAll('[data-history-key]').forEach(detail => { detail.open = open.has(detail.dataset.historyKey); });
 }
 
 function transactionsInRange(start, end) {
@@ -172,9 +205,9 @@ function renderToday() {
   const records = transactionsInRange(today, today);
   $('todayDate').textContent = `${now.getMonth() + 1} 月 ${now.getDate()} 日`;
   $('todaySummary').textContent = records.length ? `今天共有 ${records.length} 筆庫存異動` : '今天尚無庫存異動';
-  $('todayTransactions').innerHTML = records.length
-    ? records.map(transactionCard).join('')
-    : '<p class="activity-empty">新增或減少材料後，異動紀錄會顯示在這裡。</p>';
+  renderTransactionList('todayTransactions', records.length
+    ? records.map(record => transactionCard(record, true)).join('')
+    : '<p class="activity-empty">新增或減少材料後，異動紀錄會顯示在這裡。</p>');
 }
 
 const locationCollator = new Intl.Collator('zh-Hant', { numeric: true });
@@ -228,7 +261,7 @@ function setView(view = 'home') {
   const headings = {
     home: ['倉庫，一目了然。', '找到材料，記錄每一次進出。'],
     materials: ['每一件，都有位置。', '搜尋材料，快速確認庫存與存放位置。'],
-    stats: ['每次使用，都有跡可循。', '選擇日期，查看材料、原因與備註。'],
+    stats: ['每次使用，都有跡可循。', '選擇月份、周或日期區間，查看材料、原因與備註。'],
     locations: ['找到對的位置。', '從樓層到倉庫，整理每個存放位置。']
   };
   if (!headings[view]) return;
@@ -314,10 +347,98 @@ function changeMaterialPage(delta) {
   $('materialList').scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
 }
 
+function statsDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  if (year < 1 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(0);
+  date.setHours(12, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+}
+
+function statsPeriodRange(mode, value) {
+  if (mode === 'month') {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(value || '')) return null;
+    const start = statsDate(`${value}-01`);
+    if (!start) return null;
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + 1, 0);
+    return { start: localDateKey(start), end: localDateKey(end) };
+  }
+  if (mode === 'week') {
+    const start = statsDate(value);
+    if (!start) return null;
+    start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    if (start.getFullYear() < 1 || end.getFullYear() > 9999) return null;
+    return { start: localDateKey(start), end: localDateKey(end) };
+  }
+  return null;
+}
+
+function shiftedStatsValue(delta) {
+  const value = statsMode === 'month' ? $('statsMonthInput').value : $('statsWeekInput').value;
+  const range = statsPeriodRange(statsMode, value);
+  if (!range) return '';
+  const date = statsDate(range.start);
+  if (statsMode === 'month') date.setMonth(date.getMonth() + delta);
+  else if (statsMode === 'week') date.setDate(date.getDate() + delta * 7);
+  else return '';
+  const next = statsMode === 'month' ? localMonth(date) : localDateKey(date);
+  return statsPeriodRange(statsMode, next) ? next : '';
+}
+
+function applyStatsPeriod() {
+  const range = statsMode === 'custom' ? statsCustomRange
+    : statsPeriodRange(statsMode, statsMode === 'month' ? $('statsMonthInput').value : $('statsWeekInput').value);
+  $('statsStartDate').value = range?.start || '';
+  $('statsEndDate').value = range?.end || '';
+  renderStats();
+}
+
+function chooseStatsMode(mode) {
+  if (!['month', 'week', 'custom'].includes(mode)) return;
+  if (statsMode === 'custom') statsCustomRange = { start: $('statsStartDate').value, end: $('statsEndDate').value };
+  statsMode = mode;
+  applyStatsPeriod();
+}
+
+function shiftStatsPeriod(delta) {
+  const value = shiftedStatsValue(delta);
+  if (!value) return;
+  $(statsMode === 'month' ? 'statsMonthInput' : 'statsWeekInput').value = value;
+  applyStatsPeriod();
+}
+
+function currentStatsPeriod() {
+  if (statsMode === 'month') $('statsMonthInput').value = localMonth();
+  else if (statsMode === 'week') $('statsWeekInput').value = localDateKey();
+  else return;
+  applyStatsPeriod();
+}
+
 function renderStats() {
   const start = $('statsStartDate').value;
   const end = $('statsEndDate').value;
-  const invalid = !start || !end || start > end;
+  const invalid = !statsDate(start) || !statsDate(end) || start > end;
+  $('statsHeading').textContent = statsMode === 'month' ? '月統計' : statsMode === 'week' ? '周統計' : '日期區間統計';
+  document.querySelectorAll('[data-stats-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.statsMode === statsMode)));
+  $('statsMonthFields').classList.toggle('hidden', statsMode !== 'month');
+  $('statsWeekFields').classList.toggle('hidden', statsMode !== 'week');
+  $('statsCustomFields').classList.toggle('hidden', statsMode !== 'custom');
+  $('statsPeriodControls').classList.toggle('hidden', statsMode === 'custom');
+  $('statsPeriodNavigation').classList.toggle('hidden', statsMode === 'custom');
+  $('statsPreviousPeriod').textContent = statsMode === 'week' ? '上一周' : '上一月';
+  $('statsNextPeriod').textContent = statsMode === 'week' ? '下一周' : '下一月';
+  $('statsCurrentPeriod').textContent = statsMode === 'week' ? '本周' : '本月';
+  $('statsPreviousPeriod').disabled = statsMode === 'custom' || !shiftedStatsValue(-1);
+  $('statsNextPeriod').disabled = statsMode === 'custom' || !shiftedStatsValue(1);
+  $('statsRangeError').textContent = statsMode === 'month' ? '請選擇有效的月份。' : statsMode === 'week' ? '請選擇有效日期，系統會統計該周週一至週日。' : '開始日期不能晚於結束日期，且兩個日期都要填寫。';
+  $('statsPeriodLabel').textContent = invalid ? '請先選擇有效的統計區間。'
+    : `${start.replaceAll('-', '/')} — ${end.replaceAll('-', '/')}${statsMode === 'week' ? '（週一至週日）' : ''}`;
   $('statsRangeError').classList.toggle('hidden', !invalid);
   const records = invalid ? [] : transactionsInRange(start, end);
   const used = records.filter(record => record.type === '減少');
@@ -347,9 +468,128 @@ function renderStats() {
   $('rangeUsage').textContent = `${used.length} 筆`;
   $('rangeRestock').textContent = `${restocked.length} 筆`;
   $('rangeCount').textContent = `（${records.length} 筆）`;
-  $('rangeTransactions').innerHTML = invalid
+  renderTransactionList('rangeTransactions', invalid
     ? '<p class="activity-empty">請選擇有效的開始與結束日期。</p>'
-    : records.length ? records.map(transactionCard).join('') : '<p class="activity-empty">所選日期沒有庫存異動。</p>';
+    : records.length ? records.map(record => transactionCard(record)).join('') : '<p class="activity-empty">所選日期沒有庫存異動。</p>');
+}
+
+function openTransactionEdit(key) {
+  if (!canModifyInventory()) return toast('請先登入並完成同步，尚未更正紀錄');
+  if (!transactionEditingAvailable) return toast('雲端更正功能尚未啟用，紀錄與庫存都未更動');
+  const record = transactions.find(candidate => transactionKey(candidate) === key);
+  if (!record || !materials.some(item => item.id === record.materialId)) return toast('紀錄或材料已不存在，請重新同步');
+  editingTransactionKey = key;
+  editingTransactionVersion = record.version || 1;
+  $('transactionEditQuantity').value = String(record.amount);
+  $('transactionEditReason').value = record.type === '增加' ? '入庫補貨' : '維修使用';
+  $('transactionEditNote').value = record.note || '';
+  $('accountPopover').classList.add('hidden');
+  $('accountButton').setAttribute('aria-expanded', 'false');
+  $('transactionEditModal').classList.remove('hidden');
+  document.querySelector('.app-shell').inert = true;
+  document.body.classList.add('transaction-edit-open');
+  updateTransactionEditViewport();
+  renderTransactionEdit();
+  $('closeTransactionEdit').focus({ preventScroll: true });
+}
+
+function closeTransactionEdit(force = false) {
+  if (transactionEditSubmitting && force !== true) return;
+  const key = editingTransactionKey;
+  if (force === true) transactionEditSubmitting = false;
+  editingTransactionKey = null;
+  editingTransactionVersion = null;
+  $('transactionEditModal').classList.add('hidden');
+  document.body.classList.remove('transaction-edit-open');
+  if ($('modal').classList.contains('hidden')) document.querySelector('.app-shell').inert = false;
+  $('transactionEditForm').reset();
+  for (const id of ['transactionEditMaterial', 'transactionEditLocation', 'transactionEditTime', 'transactionEditOriginal', 'transactionEditBefore', 'transactionEditAfter', 'transactionEditDelta', 'transactionEditError']) $(id).textContent = '';
+  if (key) queueMicrotask(() => {
+    [...document.querySelectorAll('[data-edit-transaction]')].find(button => button.dataset.editTransaction === key && !button.disabled)?.focus({ preventScroll: true });
+  });
+}
+
+function validateTransactionEdit() {
+  const record = transactions.find(candidate => transactionKey(candidate) === editingTransactionKey);
+  const item = materials.find(candidate => candidate.id === record?.materialId);
+  if (!record || !item) return { record, item, error: '這筆紀錄或材料已移除／封存，請關閉後重新同步。' };
+  if (!transactionEditSubmitting && (record.version || 1) !== editingTransactionVersion) return { record, item, error: '這筆紀錄已在其他裝置更正，請關閉後重新同步再編輯。' };
+  if (localDateKey(new Date(record.time)) !== localDateKey()) return { record, item, error: '這筆已不是今日紀錄，請關閉視窗。' };
+  const raw = $('transactionEditQuantity').value;
+  const quantity = Number(raw);
+  if (!/^[0-9]+$/.test(raw) || !Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647) return { record, item, error: '數量請填入 1 至 2,147,483,647 的整數。' };
+  const reason = $('transactionEditReason').value;
+  if (!['維修使用', '入庫補貨'].includes(reason)) return { record, item, error: '請選擇維修使用或入庫補貨。' };
+  const note = $('transactionEditNote').value.trim();
+  if (note.length > 2000) return { record, item, error: '備註最多可輸入 2000 個字。' };
+  const type = reason === '入庫補貨' ? '增加' : '減少';
+  const oldSigned = record.type === '增加' ? record.amount : -record.amount;
+  const newSigned = type === '增加' ? quantity : -quantity;
+  const delta = newSigned - oldSigned;
+  const after = item.stock + delta;
+  if (after < 0) return { record, item, error: '更正後庫存不足，請減少扣除的數量；尚未更正。' };
+  if (after > 2147483647) return { record, item, error: '更正後庫存超出可儲存範圍；尚未更正。' };
+  const unchanged = record.amount === quantity && record.type === type && record.reason === reason && (record.note || '') === note;
+  return { record, item, quantity, reason, note, type, delta, after, unchanged, error: '' };
+}
+
+function renderTransactionEdit() {
+  if (!editingTransactionKey) return;
+  const checked = validateTransactionEdit();
+  const { record, item } = checked;
+  const busy = transactionEditSubmitting || !!window.InventoryCloud?.status().busy;
+  const unit = record?.unit || '';
+  const quantityText = amount => `${formatNumber(amount)}${unit ? ` ${unit}` : ''}`;
+  $('transactionEditMaterial').textContent = record ? transactionMaterial(record).name : '紀錄已不存在';
+  $('transactionEditLocation').textContent = item ? `目前位置：${item.location}${item.detail ? ` · ${item.detail}` : ''}` : '';
+  $('transactionEditTime').textContent = record ? `原異動時間：${new Date(record.time).toLocaleString('zh-TW')}` : '';
+  $('transactionEditOriginal').textContent = record ? `原紀錄：${record.type === '增加' ? '增加' : '減少'} ${quantityText(record.amount)} · ${record.reason || '未填寫原因'}` : '';
+  $('transactionEditBefore').textContent = item ? quantityText(item.stock) : '—';
+  $('transactionEditAfter').textContent = checked.error ? '待確認' : quantityText(checked.after);
+  $('transactionEditDelta').textContent = checked.error ? '紀錄與庫存都未更動。' : checked.delta > 0 ? `將補回庫存 ${quantityText(checked.delta)}。` : checked.delta < 0 ? `將減少庫存 ${quantityText(-checked.delta)}。` : '庫存不變，只更正紀錄內容。';
+  if (!checked.error && record?.type !== checked.type) $('transactionEditDelta').textContent += ` 原因已切換，此筆改為${checked.type === '增加' ? '入庫補貨' : '維修使用'}。`;
+  $('transactionEditError').textContent = checked.error;
+  $('transactionEditError').classList.toggle('hidden', !checked.error);
+  $('transactionEditQuantity').setAttribute('aria-invalid', String(!!checked.error));
+  for (const id of ['transactionEditQuantity', 'transactionEditReason', 'transactionEditNote']) $(id).disabled = busy;
+  document.querySelectorAll('[data-close-transaction-edit]').forEach(button => { if (button.tagName === 'BUTTON') button.disabled = transactionEditSubmitting; });
+  $('saveTransactionEdit').disabled = busy || !canModifyInventory() || !!checked.error || checked.unchanged;
+  $('saveTransactionEdit').textContent = busy ? '正在確認…' : '確認更正';
+}
+
+function updateTransactionEditViewport() {
+  const viewport = window.visualViewport;
+  $('transactionEditModal').style.setProperty('--transaction-viewport-height', `${viewport?.height || window.innerHeight}px`);
+  $('transactionEditModal').style.setProperty('--transaction-viewport-top', `${viewport?.offsetTop || 0}px`);
+  if (editingTransactionKey && document.querySelector('.transaction-edit-body').contains(document.activeElement)) {
+    requestAnimationFrame(() => document.activeElement?.scrollIntoView?.({ block: 'nearest' }));
+  }
+}
+
+async function saveTransactionEdit(event) {
+  event.preventDefault();
+  if (!editingTransactionKey || transactionEditSubmitting || !canModifyInventory()) return;
+  const checked = validateTransactionEdit();
+  if (checked.error || checked.unchanged) { renderTransactionEdit(); return; }
+  const { record, item, quantity, reason, note, type, delta } = checked;
+  transactionEditSubmitting = true;
+  renderTransactionEdit();
+  try {
+    if (cloudEnabled) await window.InventoryCloud.mutate('edit_transaction', { transactionId: record.id, version: editingTransactionVersion, quantity, reason, note });
+    else {
+      const before = { amount: record.amount, type: record.type, reason: record.reason, note: record.note || '', version: record.version || 1 };
+      const after = { amount: quantity, type, reason, note, version: before.version + 1 };
+      record.editHistory ||= [];
+      record.editHistory.push({ time: new Date().toISOString(), before, after, stockBefore: item.stock, stockAfter: item.stock + delta });
+      Object.assign(record, after);
+      item.stock += delta;
+      item.version = (item.version || 1) + 1;
+      save();
+    }
+    transactionEditSubmitting = false;
+    closeTransactionEdit(); render();
+    toast('異動紀錄已更正，庫存與統計已同步更新');
+  } catch (error) { transactionEditSubmitting = false; renderTransactionEdit(); toast(error.message); }
 }
 
 function openAdjustment(item, type) {
@@ -446,6 +686,7 @@ function renderAdjustment() {
 }
 
 function updateAdjustmentViewport() {
+  updateTransactionEditViewport();
   const viewport = window.visualViewport;
   $('modal').style.setProperty('--adjustment-viewport-height', `${viewport?.height || window.innerHeight}px`);
   $('modal').style.setProperty('--adjustment-viewport-top', `${viewport?.offsetTop || 0}px`);
@@ -697,8 +938,12 @@ async function saveMaterialFromForm(event) {
 function init() {
   const today = localDateKey();
   $('workDate').textContent = new Intl.DateTimeFormat('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
-  $('statsStartDate').value = `${today.slice(0, 7)}-01`;
-  $('statsEndDate').value = today;
+  statsCustomRange = { start: `${today.slice(0, 7)}-01`, end: today };
+  $('statsMonthInput').value = localMonth();
+  $('statsWeekInput').value = today;
+  const monthRange = statsPeriodRange('month', localMonth());
+  $('statsStartDate').value = monthRange.start;
+  $('statsEndDate').value = monthRange.end;
   renderLocationOptions();
   render();
   document.querySelectorAll('.nav-button[data-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
@@ -714,8 +959,18 @@ function init() {
     setView('materials');
     resetMaterialPage();
   });
-  $('statsStartDate').addEventListener('change', renderStats);
-  $('statsEndDate').addEventListener('change', renderStats);
+  $('statsModeSwitch').addEventListener('click', event => {
+    const button = event.target.closest('[data-stats-mode]');
+    if (button) chooseStatsMode(button.dataset.statsMode);
+  });
+  for (const id of ['statsMonthInput', 'statsWeekInput']) $(id).addEventListener('change', applyStatsPeriod);
+  for (const id of ['statsStartDate', 'statsEndDate']) $(id).addEventListener('change', () => {
+    if (statsMode === 'custom') statsCustomRange = { start: $('statsStartDate').value, end: $('statsEndDate').value };
+    renderStats();
+  });
+  $('statsPreviousPeriod').addEventListener('click', () => shiftStatsPeriod(-1));
+  $('statsNextPeriod').addEventListener('click', () => shiftStatsPeriod(1));
+  $('statsCurrentPeriod').addEventListener('click', currentStatsPeriod);
   $('searchInput').addEventListener('input', resetMaterialPage);
   $('locationFilter').addEventListener('change', resetMaterialPage);
   $('previousMaterialsPage').addEventListener('click', () => changeMaterialPage(-1));
@@ -729,6 +984,14 @@ function init() {
   $('locationForm').addEventListener('submit', saveLocationFromForm);
   $('materialForm').addEventListener('submit', saveMaterialFromForm);
   $('deleteMaterialButton').addEventListener('click', openDeleteMaterial);
+  $('todayTransactions').addEventListener('click', event => {
+    const button = event.target.closest('[data-edit-transaction]');
+    if (button && !button.disabled) openTransactionEdit(button.dataset.editTransaction);
+  });
+  document.querySelectorAll('[data-close-transaction-edit]').forEach(button => button.addEventListener('click', closeTransactionEdit));
+  for (const id of ['transactionEditQuantity', 'transactionEditNote']) $(id).addEventListener('input', renderTransactionEdit);
+  $('transactionEditReason').addEventListener('change', renderTransactionEdit);
+  $('transactionEditForm').addEventListener('submit', saveTransactionEdit);
   $('confirmDeleteMaterial').addEventListener('click', confirmDeleteMaterial);
   document.querySelectorAll('[data-cancel-delete-material]').forEach(button => button.addEventListener('click', cancelDeleteMaterial));
   document.querySelectorAll('[data-close-location-modal]').forEach(button => button.addEventListener('click', closeLocationForm));
@@ -755,7 +1018,8 @@ function init() {
     // The account controller closes its own popover without discarding this draft.
     if (!$('accountPopover').classList.contains('hidden')) return;
     if (!$('logoutModal').classList.contains('hidden')) return;
-    if (!$('deleteMaterialModal').classList.contains('hidden')) cancelDeleteMaterial();
+    if (!$('transactionEditModal').classList.contains('hidden')) closeTransactionEdit();
+    else if (!$('deleteMaterialModal').classList.contains('hidden')) cancelDeleteMaterial();
     else if (!$('deleteLocationModal').classList.contains('hidden')) closeDeleteLocationForm();
     else if (!$('locationModal').classList.contains('hidden')) closeLocationForm();
     else { closeMaterialForm(); closeAdjustment(); }
@@ -808,7 +1072,7 @@ function init() {
   if (cloudEnabled) {
     $('cloudPanel').classList.remove('hidden');
     renderAccessControls();
-    document.querySelector('.bottom-note').textContent = '雲端模式：原裝置舊資料保留作為備份，不會自動匯入；LINE 通知尚未啟用。';
+    document.querySelector('.bottom-note').textContent = window.INVENTORY_CLOUD_CONFIG?.preview ? '本機預覽：僅使用示範資料，所有更正不會影響正式庫存。' : '雲端模式：原裝置舊資料保留作為備份，不會自動匯入；LINE 通知尚未啟用。';
     if (!window.InventoryCloud) {
       $('cloudStatus').textContent = '雲端元件無法載入，請重新整理；尚未異動資料。';
       return;
@@ -818,6 +1082,7 @@ function init() {
       applySnapshot(snapshot) {
         materials = snapshot.materials;
         transactions = snapshot.transactions;
+        transactionEditingAvailable = snapshot.features?.transactionEdit === true;
         archivedMaterials = snapshot.archivedMaterials || [];
         customLocations = snapshot.locations;
         renderLocationOptions();
@@ -827,14 +1092,15 @@ function init() {
       clearSnapshot() {
         materials = []; transactions = []; customLocations = []; archivedMaterials = [];
         deletingMaterial = null;
-        closeAdjustment(true); closeMaterialForm();
+        transactionEditingAvailable = false;
+        closeTransactionEdit(true); closeAdjustment(true); closeMaterialForm();
         $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
         $('deleteLocationModal').classList.add('hidden');
         renderLocationOptions(); render();
       },
       onStatus: renderAccessControls,
       onRecovered() {
-        closeAdjustment(); closeMaterialForm(true); $('locationModal').classList.add('hidden');
+        closeTransactionEdit(true); closeAdjustment(); closeMaterialForm(true); $('locationModal').classList.add('hidden');
         $('deleteLocationModal').classList.add('hidden');
         locationReturnToMaterial = false; toast('待處理操作已確認，沒有重複異動');
       }
