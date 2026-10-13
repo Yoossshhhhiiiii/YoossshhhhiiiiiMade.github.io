@@ -185,6 +185,84 @@ test('Statistics month/week navigation preserves custom dates and filters materi
   a.assertLegacy(); a.w.close();
 });
 
+test('Statistics details show five newest records per page while totals and history cover the full range', async () => {
+  const a = setup(); await tick();
+  const event = n => ({ id: a.w.crypto.randomUUID(), materialId: 1, materialName: `材料${n}`, unit: '個', amount: n,
+    type: n % 3 === 0 ? '增加' : '減少', reason: n % 3 === 0 ? '入庫補貨' : '維修使用', note: `房號${n}`,
+    time: new Date(2026, 0, 6, 10, n).toISOString(), version: 1, editHistory: [] });
+  const records = Array.from({ length: 9 }, (_, i) => event(i + 1));
+  records[3].editHistory = [{ time: records[3].time, before: { amount: 3, type: '減少', reason: '維修使用', note: '原備註' }, after: { amount: 4, type: '減少', reason: '維修使用', note: '房號4', version: 2 } }];
+  records[3].version = 2;
+  a.server().transactions = [4, 1, 9, 7, 2, 8, 3, 5, 6].map(n => records[n - 1]);
+  const original = structuredClone(a.server());
+  await a.w.InventoryCloud.refresh(); a.click('#statsButton'); a.change('#statsMonthInput', '2026-01');
+  const names = () => [...a.q('#rangeTransactions').querySelectorAll('.transaction-main strong')].map(node => node.textContent);
+  assert.deepEqual(names(), ['材料9', '材料8', '材料7', '材料6', '材料5']);
+  assert.equal(a.q('#rangeCount').textContent, '（9 筆）');
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 1／2 頁 · 共 9 筆');
+  assert(a.q('#previousStatsTransactionsPage').disabled); assert(!a.q('#nextStatsTransactionsPage').disabled);
+  assert.equal(a.q('#rangeUsage').textContent, '6 筆'); assert.equal(a.q('#rangeRestock').textContent, '3 筆');
+  assert.match(a.q('#usageBreakdown').textContent, /27 個/);
+  a.click('#nextStatsTransactionsPage');
+  assert.deepEqual(names(), ['材料4', '材料3', '材料2', '材料1']);
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 2／2 頁 · 共 9 筆');
+  assert(a.q('#nextStatsTransactionsPage').disabled); assert(!a.q('#previousStatsTransactionsPage').disabled);
+  assert.match(a.q('#rangeTransactions').textContent, /房號4/); assert.match(a.q('#rangeTransactions').textContent, /入庫補貨/);
+  a.q('#rangeTransactions details').open = true;
+  await a.w.InventoryCloud.refresh();
+  assert.deepEqual(names(), ['材料4', '材料3', '材料2', '材料1']);
+  assert(a.q('#rangeTransactions details').open, 'Sync keeps the current page and expanded visible audit');
+  assert.match(a.q('#usageBreakdown').textContent, /27 個/, 'Changing pages never changes all-range totals');
+  a.click('#previousStatsTransactionsPage'); assert.deepEqual(names(), ['材料9', '材料8', '材料7', '材料6', '材料5']);
+  a.click('#nextStatsTransactionsPage'); a.click('[data-stats-mode="week"]'); a.change('#statsWeekInput', '2026-01-06');
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 1／2 頁 · 共 9 筆');
+  a.click('#nextStatsTransactionsPage'); a.click('[data-stats-mode="custom"]');
+  a.change('#statsStartDate', '2026-01-06'); a.change('#statsEndDate', '2026-01-06');
+  assert.deepEqual(names(), ['材料9', '材料8', '材料7', '材料6', '材料5']);
+  a.click('#nextStatsTransactionsPage'); a.change('#statsEndDate', '2026-01-05');
+  assert(a.q('#statsTransactionsPagination').classList.contains('hidden'));
+  assert.equal(names().length, 0); assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 1／1 頁 · 共 0 筆');
+  assert.deepEqual(a.server(), original); assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  a.assertLegacy(); a.w.close();
+});
+
+test('Statistics pagination handles empty and exact page boundaries without missing or duplicate records', async () => {
+  for (const size of [0, 1, 5, 6, 10, 11]) {
+    const a = setup(); await tick();
+    const records = Array.from({ length: size }, (_, i) => ({ id: a.w.crypto.randomUUID(), materialId: 1, materialName: `紀錄${i + 1}`, unit: '個', amount: 1, type: '減少', reason: '維修使用', note: '', time: new Date(2026, 0, 6, 10, i).toISOString(), version: 1, editHistory: [] }));
+    a.server().transactions = records.concat([{ ...records[0], materialId: 1, time: 'invalid', amount: 1 }, { ...records[0], materialId: 1, time: new Date(2026, 1, 1, 12).toISOString(), amount: 1 }]);
+    await a.w.InventoryCloud.refresh(); a.click('#statsButton'); a.change('#statsMonthInput', '2026-01');
+    assert.equal(a.q('#statsTransactionsPagination').classList.contains('hidden'), size <= 5);
+    assert.equal(a.q('#rangeCount').textContent, `（${size} 筆）`);
+    const visited = [];
+    do {
+      const names = [...a.q('#rangeTransactions').querySelectorAll('.transaction-main strong')].map(node => node.textContent);
+      assert(names.length <= 5); visited.push(...names);
+      if (a.q('#nextStatsTransactionsPage').disabled) break;
+      a.click('#nextStatsTransactionsPage');
+    } while (true);
+    assert.deepEqual(visited, records.slice().reverse().map(record => record.materialName));
+    assert.equal(new Set(visited).size, size);
+    assert(!a.calls.some(call => call.name === 'warehouse_mutate')); a.assertLegacy(); a.w.close();
+  }
+});
+
+test('Statistics sync clamps a removed last page and logout clears all paginated records', async () => {
+  const a = setup(); await tick();
+  a.server().transactions = Array.from({ length: 11 }, (_, i) => ({ id: a.w.crypto.randomUUID(), materialId: 1, materialName: `紀錄${i + 1}`, unit: '個', amount: 1, type: '減少', reason: '維修使用', note: '', time: new Date(2026, 0, 6, 10, i).toISOString(), version: 1, editHistory: [] }));
+  await a.w.InventoryCloud.refresh(); a.click('#statsButton'); a.change('#statsMonthInput', '2026-01');
+  a.click('#nextStatsTransactionsPage'); a.click('#nextStatsTransactionsPage');
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 3／3 頁 · 共 11 筆');
+  a.server().transactions = a.server().transactions.slice(0, 7); await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 2／2 頁 · 共 7 筆');
+  assert.equal(a.q('#rangeTransactions').querySelectorAll('.transaction-card').length, 2);
+  a.callback(null); await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(a.q('#rangeTransactions').querySelectorAll('.transaction-card').length, 0);
+  assert(a.q('#statsTransactionsPagination').classList.contains('hidden'));
+  assert.equal(a.q('#statsTransactionsPageStatus').textContent, '第 1／1 頁 · 共 0 筆');
+  a.assertLegacy(); a.w.close();
+});
+
 test('Today edit occupies its own central grid cell and remains bound to the same event', async () => {
   const a = setup(); await tick();
   a.click('[data-action="minus"]'); a.click('#confirmAdjustment'); await tick();
