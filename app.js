@@ -74,6 +74,9 @@ let transactionEditSubmitting = false;
 let transactionEditingAvailable = !cloudEnabled;
 let statsMode = 'month';
 let statsCustomRange = null;
+const STATS_TRANSACTIONS_PER_PAGE = 5;
+let statsTransactionsPage = 1;
+let statsTransactionsRange = '';
 const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
 let lowStockOnly = false;
@@ -396,6 +399,7 @@ function applyStatsPeriod() {
     : statsPeriodRange(statsMode, statsMode === 'month' ? $('statsMonthInput').value : $('statsWeekInput').value);
   $('statsStartDate').value = range?.start || '';
   $('statsEndDate').value = range?.end || '';
+  statsTransactionsPage = 1;
   renderStats();
 }
 
@@ -420,10 +424,19 @@ function currentStatsPeriod() {
   applyStatsPeriod();
 }
 
+function changeStatsTransactionsPage(delta) {
+  statsTransactionsPage += delta;
+  renderStats();
+  $('rangeTransactions').scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+}
+
 function renderStats() {
   const start = $('statsStartDate').value;
   const end = $('statsEndDate').value;
   const invalid = !statsDate(start) || !statsDate(end) || start > end;
+  const rangeKey = `${statsMode}:${start}:${end}`;
+  if (rangeKey !== statsTransactionsRange) statsTransactionsPage = 1;
+  statsTransactionsRange = rangeKey;
   $('statsHeading').textContent = statsMode === 'month' ? '月統計' : statsMode === 'week' ? '周統計' : '日期區間統計';
   document.querySelectorAll('[data-stats-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.statsMode === statsMode)));
   $('statsMonthFields').classList.toggle('hidden', statsMode !== 'month');
@@ -441,6 +454,9 @@ function renderStats() {
     : `${start.replaceAll('-', '/')} — ${end.replaceAll('-', '/')}${statsMode === 'week' ? '（週一至週日）' : ''}`;
   $('statsRangeError').classList.toggle('hidden', !invalid);
   const records = invalid ? [] : transactionsInRange(start, end);
+  const pageCount = Math.max(1, Math.ceil(records.length / STATS_TRANSACTIONS_PER_PAGE));
+  statsTransactionsPage = Math.min(Math.max(1, statsTransactionsPage), pageCount);
+  const visibleRecords = records.slice((statsTransactionsPage - 1) * STATS_TRANSACTIONS_PER_PAGE, statsTransactionsPage * STATS_TRANSACTIONS_PER_PAGE);
   const used = records.filter(record => record.type === '減少');
   const restocked = records.filter(record => record.type === '增加');
   const byMaterial = new Map();
@@ -470,7 +486,11 @@ function renderStats() {
   $('rangeCount').textContent = `（${records.length} 筆）`;
   renderTransactionList('rangeTransactions', invalid
     ? '<p class="activity-empty">請選擇有效的開始與結束日期。</p>'
-    : records.length ? records.map(record => transactionCard(record)).join('') : '<p class="activity-empty">所選日期沒有庫存異動。</p>');
+    : records.length ? visibleRecords.map(record => transactionCard(record)).join('') : '<p class="activity-empty">所選日期沒有庫存異動。</p>');
+  $('statsTransactionsPagination').classList.toggle('hidden', pageCount === 1);
+  $('statsTransactionsPageStatus').textContent = `第 ${statsTransactionsPage}／${pageCount} 頁 · 共 ${records.length} 筆`;
+  $('previousStatsTransactionsPage').disabled = statsTransactionsPage === 1;
+  $('nextStatsTransactionsPage').disabled = statsTransactionsPage === pageCount;
 }
 
 function openTransactionEdit(key) {
@@ -966,8 +986,11 @@ function init() {
   for (const id of ['statsMonthInput', 'statsWeekInput']) $(id).addEventListener('change', applyStatsPeriod);
   for (const id of ['statsStartDate', 'statsEndDate']) $(id).addEventListener('change', () => {
     if (statsMode === 'custom') statsCustomRange = { start: $('statsStartDate').value, end: $('statsEndDate').value };
+    statsTransactionsPage = 1;
     renderStats();
   });
+  $('previousStatsTransactionsPage').addEventListener('click', () => changeStatsTransactionsPage(-1));
+  $('nextStatsTransactionsPage').addEventListener('click', () => changeStatsTransactionsPage(1));
   $('statsPreviousPeriod').addEventListener('click', () => shiftStatsPeriod(-1));
   $('statsNextPeriod').addEventListener('click', () => shiftStatsPeriod(1));
   $('statsCurrentPeriod').addEventListener('click', currentStatsPeriod);

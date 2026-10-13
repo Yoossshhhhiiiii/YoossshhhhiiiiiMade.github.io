@@ -156,6 +156,7 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .material-empty { padding: 32px 16px; text-align: center; font-size: 13px; }
 .material-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 13px; font-size: 11px; }
 .page-button { border: 1px solid var(--line); border-radius: 7px; min-height: 32px; padding: 6px 10px; font-size: 11px; }
+.transaction-pagination .page-button { min-height: 44px; }
 .activity-summary { font-size: 12px; margin: 0 0 11px; }
 .transaction-list { border: 1px solid var(--line); border-radius: 13px; background: var(--surface); }
 .transaction-card { padding: 15px 17px; border-top: 1px solid var(--line); }
