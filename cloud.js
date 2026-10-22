@@ -17,6 +17,7 @@
   const copy = value => JSON.parse(JSON.stringify(value));
   const errors = {
     WAREHOUSE_ACCESS_DENIED: '這個登入帳號尚未獲准使用庫存，請聯絡管理員。',
+    WAREHOUSE_READ_ONLY: '此帳號只能查看，不能新增、修改、刪除或增減庫存；資料未更動。',
     WAREHOUSE_IMPORT_NOT_ALLOWED: '這個帳號沒有首次匯入權限。',
     WAREHOUSE_ALREADY_INITIALIZED: '雲端已有資料，不能再次匯入或覆蓋。請重新同步查看。',
     WAREHOUSE_INSUFFICIENT_STOCK: '雲端庫存不足，沒有扣庫存，也沒有新增異動紀錄。',
@@ -170,7 +171,7 @@
     return records;
   }
 
-  function canWrite() { return !enabled || (!!state.session && state.snapshot?.initialized && state.mode === 'ready' && !state.busy && !state.pending.length && navigator.onLine !== false); }
+  function canWrite() { return !enabled || (!!state.session && state.snapshot?.canWrite === true && state.snapshot.initialized && state.mode === 'ready' && !state.busy && !state.pending.length && navigator.onLine !== false); }
 
   function publish() {
     if (!enabled || !el('cloudPanel')) return;
@@ -184,9 +185,18 @@
       denied: ['這個帳號沒有使用權限', '請登出並使用經管理員核准的帳號。'],
       error: ['雲端尚未就緒', '請保留手機舊資料，不要清除瀏覽器資料。']
     };
-    const [title, detail] = descriptions[state.mode] || descriptions.error;
+    let [title, detail] = descriptions[state.mode] || descriptions.error;
+    const readOnly = !!state.session && state.snapshot?.canWrite === false;
+    if (readOnly) {
+      title = `唯讀帳號 · ${title}`;
+      if (state.mode === 'ready') detail = '可查看全部庫存、位置與統計，不能新增、修改、刪除或增減庫存。';
+    } else if (state.mode === 'ready' && state.snapshot?.canWrite !== true) {
+      title = '權限設定尚未完成';
+      detail = '暫時僅能查看，請管理員更新雲端權限設定；不會改用本機寫入。';
+    }
+    el('readOnlyNotice').classList.toggle('hidden', !readOnly);
     // Never hide first import, connectivity errors or unresolved write results.
-    el('cloudPanel').classList.toggle('hidden', !!state.session && state.mode === 'ready' && !state.pending.length);
+    el('cloudPanel').classList.toggle('hidden', !!state.session && state.mode === 'ready' && !state.pending.length && typeof state.snapshot?.canWrite === 'boolean');
     el('cloudStatus').textContent = state.pending.length ? `有 ${state.pending.length} 筆操作需要確認` : title;
     el('cloudDetail').textContent = state.message || (state.pending.length ? '連線中斷可能發生在伺服器儲存後。請按「確認待處理操作」，系統不會重複扣庫存。' : detail);
     el('cloudLoginForm').classList.toggle('hidden', !!state.session);
@@ -195,7 +205,7 @@
     el('cloudAccount').textContent = accountLabel(state.session?.user);
     el('accountControl').classList.toggle('hidden', !state.session);
     el('accountStatus').textContent = state.pending.length ? `有 ${state.pending.length} 筆操作需要確認` : title;
-    el('accountMessage').textContent = state.message || (state.pending.length ? el('cloudDetail').textContent : '');
+    el('accountMessage').textContent = state.message || (state.pending.length ? el('cloudDetail').textContent : readOnly ? detail : '');
     el('accountLastSync').textContent = state.lastSyncedAt ? `上次同步 ${new Intl.DateTimeFormat('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(state.lastSyncedAt))}` : '尚未完成同步';
     el('accountButton').title = `${accountLabel(state.session?.user)} · ${title}`;
     if (!state.session) { closeAccountMenu(); el('logoutModal').classList.add('hidden'); }
@@ -206,7 +216,7 @@
     el('cloudRefreshFromPanel').disabled = el('cloudRefreshButton').disabled;
     el('cloudRetryButton').classList.toggle('hidden', !state.pending.length);
     el('cloudRetryButton').disabled = state.busy;
-    const needsImport = state.session && state.snapshot && !state.snapshot.initialized && state.snapshot.canImport;
+    const needsImport = state.session && state.snapshot?.canWrite === true && !state.snapshot.initialized && state.snapshot.canImport;
     el('cloudImportPanel').classList.toggle('hidden', !needsImport);
     let count = 0;
     try { count = legacyInventory().materials.length; } catch { /* Backup is still available. */ }
@@ -272,6 +282,8 @@
   }
 
   function definitiveFailure(error) {
+    // 005 checks the receipt under the write lock before this specific denial.
+    if (error?.code === '42501' && error.message?.includes('WAREHOUSE_READ_ONLY')) return true;
     // Auth/gateway errors do not prove that a PREVIOUS attempt did not commit.
     // Keep their retry identity until this account can query the ledger again.
     return typeof error?.code === 'string' && (/^(22|23)/.test(error.code)
@@ -298,6 +310,8 @@
 
   async function mutate(operation, payload) {
     if (!state.session || state.busy || !client) throw new Error('請先登入並等待同步完成。');
+    if (state.snapshot?.canWrite !== true) throw new Error(state.snapshot?.canWrite === false
+      ? errors.WAREHOUSE_READ_ONLY : '帳號權限尚未確認，暫停異動；請重新同步或聯絡管理員。');
     state.pending = readPending();
     if (state.pending.length) throw new Error('請先確認待處理操作，避免重複異動。');
     if (operation !== 'import_phone' && !canWrite()) throw new Error('目前無法同步，尚未異動庫存。');
@@ -309,7 +323,10 @@
     state.busy = true; state.message = ''; state.pending = readPending(); publish();
     try { return await sendRecord(record); }
     catch (error) {
-      if (error?.code === '42501') { state.mode = 'denied'; state.snapshot = null; hooks.clearSnapshot?.(); }
+      if (error?.code === '42501') {
+        if (error.message?.includes('WAREHOUSE_READ_ONLY')) { if (state.snapshot) state.snapshot.canWrite = false; }
+        else { state.mode = 'denied'; state.snapshot = null; hooks.clearSnapshot?.(); }
+      }
       state.message = definitiveFailure(error) ? errorText(error) : '操作結果尚未確認，請重試確認；不要重新新增另一筆異動。';
       throw new Error(state.message);
     } finally {
@@ -325,7 +342,10 @@
       state.message = '待處理操作已確認，沒有重複異動。';
       hooks.onRecovered?.();
     } catch (error) {
-      if (error?.code === '42501') { state.mode = 'denied'; state.snapshot = null; hooks.clearSnapshot?.(); }
+      if (error?.code === '42501') {
+        if (error.message?.includes('WAREHOUSE_READ_ONLY')) { if (state.snapshot) state.snapshot.canWrite = false; }
+        else { state.mode = 'denied'; state.snapshot = null; hooks.clearSnapshot?.(); }
+      }
       state.message = errorText(error);
     }
     finally { state.busy = false; state.pending = readPending(); publish(); }

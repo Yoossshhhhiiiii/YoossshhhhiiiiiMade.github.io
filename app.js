@@ -113,6 +113,15 @@ function canModifyInventory() {
 
 function renderAccessControls() {
   const disabled = !canModifyInventory();
+  const readOnly = cloudEnabled && window.InventoryCloud?.status().snapshot?.canWrite === false;
+  if (readOnly && !window.InventoryCloud?.status().busy) {
+    closeTransactionEdit(true); closeAdjustment(true); closeMaterialForm(true);
+    $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
+    $('deleteLocationModal').classList.add('hidden');
+  }
+  for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'deleteLocationFromFilter', 'deleteLocationFromPage']) {
+    $(id).classList.toggle('hidden', readOnly);
+  }
   for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'saveMaterialButton', 'confirmAdjustment', 'saveLocationButton']) {
     if ($(id)) $(id).disabled = disabled;
   }
@@ -128,8 +137,9 @@ function renderAccessControls() {
   if (editingTransactionKey) renderTransactionEdit();
   document.querySelectorAll('#todayTransactions [data-edit-transaction]').forEach(button => {
     button.disabled = disabled || !transactionEditingAvailable || !materials.some(item => String(item.id) === button.dataset.materialId);
+    button.classList.toggle('hidden', readOnly);
   });
-  document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; });
+  document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; button.classList.toggle('hidden', readOnly); });
 }
 
 function escapeHTML(value) {
