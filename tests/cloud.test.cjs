@@ -399,7 +399,7 @@ test('Local legacy transaction correction retains event time and audit across re
 });
 
 function setup({ authenticated = true, initialized = true, sdk = true, legacy = phone,
-  accountSession = session, authError = null, configOverride = null, transactionEdit = true } = {}) {
+  accountSession = session, authError = null, configOverride = null, transactionEdit = true, canWrite = true } = {}) {
   const dom = new JSDOM(html, { url: 'https://yoossshhhhiiiii.github.io/YoossshhhhiiiiiMade.github.io/', runScripts: 'outside-only', pretendToBeVisual: true });
   const w = dom.window;
   w.HTMLElement.prototype.scrollIntoView = () => {};
@@ -413,7 +413,7 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
   };
   for (const [key, value] of Object.entries(raw)) w.localStorage.setItem(key, value);
   w.localStorage.setItem('inventory-first-floor-photo-import-2026-09-29-v1', 'done');
-  let server = { initialized, revision: initialized ? 1 : 0, canImport: true, features: { transactionEdit }, materials: initialized ? [{ ...phone.materials[0], stock: 12, version: 1 }] : [], locations: initialized ? ['3樓315'] : [], transactions: [] };
+  let server = { initialized, revision: initialized ? 1 : 0, canImport: canWrite, canWrite, features: { transactionEdit }, materials: initialized ? [{ ...phone.materials[0], stock: 12, version: 1 }] : [], locations: initialized ? ['3樓315'] : [], transactions: [] };
   let callback;
   let handler;
   const calls = [];
@@ -453,7 +453,7 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
             record.editHistory.push({ time: new Date().toISOString(), before, after, stockBefore: item.stock, stockAfter: item.stock + delta });
             Object.assign(record, after); item.stock += delta; item.version++;
           } else if (params.p_operation === 'import_phone') {
-            server = { ...payload, canImport: true, initialized: true, revision: server.revision, features: { transactionEdit }, materials: payload.materials.map(item => ({ ...item, version: 1 })), transactions: payload.transactions.map(record => ({ ...record, id: w.crypto.randomUUID(), version: 1, editHistory: [] })) };
+            server = { ...payload, canImport: true, canWrite, initialized: true, revision: server.revision, features: { transactionEdit }, materials: payload.materials.map(item => ({ ...item, version: 1 })), transactions: payload.transactions.map(record => ({ ...record, id: w.crypto.randomUUID(), version: 1, editHistory: [] })) };
           } else if (params.p_operation === 'add_location') server.locations.push(payload.name);
           else if (params.p_operation === 'delete_location') {
             if (server.materials.some(item => item.location === payload.name)) return { data: null, error: { code: 'P0001', message: 'WAREHOUSE_LOCATION_IN_USE' } };
@@ -490,6 +490,88 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
   return { dom, w, q, click, change, calls, authCalls, downloads, assertLegacy,
     handler: value => { handler = value; }, server: () => server, callback: value => callback('SIGNED_OUT', value) };
 }
+
+test('Read-only username can view all inventory, locations, history and statistics without mutation controls or RPC writes', async () => {
+  const a = setup({ canWrite: false, accountSession: { user: { ...session.user, email: 'viewer01@nhunrezwvfwqqappdqij.warehouse.invalid' } } }); await tick();
+  a.server().materials.push({ ...a.server().materials[0], id: 2, name: '另一位置材料', location: '12樓東' });
+  a.server().locations.push('12樓東');
+  a.server().transactions = [{ ...phone.transactions[0], id: a.w.crypto.randomUUID(), version: 1, editHistory: [] }];
+  const baseline = structuredClone(a.server()); await a.w.InventoryCloud.refresh();
+  assert.equal(a.q('#cloudAccount').textContent, 'viewer01');
+  assert.match(a.q('#accountStatus').textContent, /唯讀帳號/);
+  assert(!a.q('#readOnlyNotice').classList.contains('hidden')); assert(!a.w.InventoryCloud.canWrite());
+  assert.equal(a.q('#materialCount').textContent, '2'); assert.equal(a.q('#warehouseLocations').children.length, 2);
+  for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'deleteLocationFromPage', 'deleteLocationFromFilter']) {
+    assert(a.q(`#${id}`).disabled); assert(a.q(`#${id}`).classList.contains('hidden'));
+  }
+  for (const button of a.w.document.querySelectorAll('#materialList [data-action], #todayTransactions [data-edit-transaction]')) {
+    assert(button.disabled); assert(button.classList.contains('hidden'));
+  }
+  a.change('#locationFilter', '12樓東'); assert.match(a.q('#materialList').textContent, /另一位置材料/);
+  a.change('#locationFilter', '全部位置'); a.change('#searchInput', '手機材料', 'input');
+  assert.match(a.q('#materialList').textContent, /手機材料/); assert(!a.q('#materialList').textContent.includes('另一位置材料'));
+  a.click('#statsButton'); assert.equal(a.q('#rangeCount').textContent, '（1 筆）'); assert.match(a.q('#rangeTransactions').textContent, /315/);
+  for (const operation of ['adjust_stock', 'save_material', 'archive_material', 'add_location', 'delete_location', 'edit_transaction', 'import_phone']) {
+    await assert.rejects(a.w.InventoryCloud.mutate(operation, {}), /只能查看/);
+  }
+  a.click('#backupCloudButton'); assert.equal(a.downloads.length, 1, 'Downloading a copy does not change warehouse data');
+  assert.deepEqual(a.server(), baseline); assert(!a.calls.some(call => call.name === 'warehouse_mutate'));
+  assert.equal(a.w.InventoryCloud.status().pending.length, 0); a.assertLegacy(); a.w.close();
+});
+
+test('Missing or malformed write permission fails closed while preserving readable data', async () => {
+  for (const value of [undefined, null, 'true', 1]) {
+    const a = setup(); await tick(); a.server().canWrite = value; await a.w.InventoryCloud.refresh();
+    assert(!a.w.InventoryCloud.canWrite()); assert(a.q('#newMaterialButton').disabled);
+    assert.equal(a.q('#materialCount').textContent, '1'); assert(!a.q('#cloudPanel').classList.contains('hidden'));
+    assert.match(a.q('#cloudStatus').textContent, /權限設定尚未完成/);
+    await assert.rejects(a.w.InventoryCloud.mutate('adjust_stock', {}), /權限尚未確認/);
+    assert(!a.calls.some(call => call.name === 'warehouse_mutate')); a.assertLegacy(); a.w.close();
+  }
+});
+
+test('Changing a writer to read-only closes unsaved drafts, preserves inventory, and never falls back to local data', async () => {
+  for (const control of ['[data-action="minus"]', '[data-action="edit"]', '#addLocationFromFilter', '#deleteLocationFromFilter']) {
+    const a = setup(); await tick(); a.click(control);
+    a.server().canWrite = false; const baseline = structuredClone(a.server()); await a.w.InventoryCloud.refresh();
+    for (const id of ['modal', 'materialModal', 'locationModal', 'deleteLocationModal', 'transactionEditModal']) assert(a.q(`#${id}`).classList.contains('hidden'));
+    assert.equal(a.q('.app-shell').inert, false); assert(!a.w.InventoryCloud.canWrite());
+    assert.deepEqual(a.server(), baseline); assert(!a.calls.some(call => call.name === 'warehouse_mutate')); a.assertLegacy(); a.w.close();
+  }
+  const a = setup({ canWrite: false, initialized: false }); await tick();
+  a.server().canImport = true; await a.w.InventoryCloud.refresh();
+  assert(a.q('#cloudImportPanel').classList.contains('hidden'));
+  await assert.rejects(a.w.InventoryCloud.mutate('import_phone', {}), /只能查看/); a.assertLegacy(); a.w.close();
+});
+
+test('Server read-only denial settles a definitely absent request without clearing readable stock or retaining unsafe retries', async () => {
+  const a = setup(); await tick(); const baseline = structuredClone(a.server());
+  a.handler(name => name === 'warehouse_snapshot' ? Promise.resolve({ data: structuredClone(a.server()), error: null })
+    : Promise.resolve({ data: null, error: { code: '42501', message: 'WAREHOUSE_READ_ONLY' } }));
+  await assert.rejects(a.w.InventoryCloud.mutate('adjust_stock', { materialId: 1, amount: -1, reason: '維修使用', note: '' }), /只能查看/);
+  assert.equal(a.w.InventoryCloud.status().pending.length, 0); assert.equal(a.w.InventoryCloud.status().mode, 'ready');
+  assert.equal(a.q('#materialCount').textContent, '1'); assert(!a.w.InventoryCloud.canWrite());
+  assert(!a.q('#readOnlyNotice').classList.contains('hidden')); assert.deepEqual(a.server(), baseline); a.assertLegacy(); a.w.close();
+});
+
+test('A downgraded writer can confirm a previously committed exact request without allowing any new writes', async () => {
+  const a = setup(); await tick(); let receipt;
+  a.handler((name, params) => {
+    if (name === 'warehouse_snapshot') return Promise.resolve({ data: structuredClone(a.server()), error: null });
+    if (!receipt) {
+      receipt = params.p_request_id; a.server().materials[0].stock--; a.server().revision++; a.server().canWrite = false;
+      return Promise.resolve({ data: null, error: { message: 'Failed to fetch', code: '' } });
+    }
+    assert.equal(params.p_request_id, receipt);
+    return Promise.resolve({ data: structuredClone(a.server()), error: null });
+  });
+  await assert.rejects(a.w.InventoryCloud.mutate('adjust_stock', { materialId: 1, amount: -1, reason: '維修使用', note: '' }), /尚未確認/);
+  await a.w.InventoryCloud.refresh(); assert.equal(a.w.InventoryCloud.status().pending.length, 1);
+  assert(!a.w.InventoryCloud.canWrite()); await assert.rejects(a.w.InventoryCloud.mutate('add_location', {}), /只能查看/);
+  const baseline = structuredClone(a.server()); a.click('#cloudRetryButton'); await tick();
+  assert.equal(a.w.InventoryCloud.status().pending.length, 0); assert.equal(a.q('.stock-number').textContent, '11');
+  assert.deepEqual(a.server(), baseline); a.assertLegacy(); a.w.close();
+});
 
 test('Adjustment preview validates direct quantity, cancels safely, and submits reason-aligned cloud changes', async () => {
   const a = setup(); await tick();
