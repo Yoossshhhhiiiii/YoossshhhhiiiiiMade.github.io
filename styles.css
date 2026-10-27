@@ -59,7 +59,7 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .all-dorms-button { display: flex; align-items: center; width: 100%; min-height: 66px; gap: 12px; padding: 14px 10px 5px; margin-top: 10px; border-top: 1px solid var(--line); text-align: left; font-size: 13px; }
 .all-dorms-button small { display: block; font-size: 10px; color: #616161; margin-top: 6px; }
 .all-dorms-button > span:last-child { margin-left: auto; }
-.dorm-scope { font-size: 12px; color: #616161; margin: -8px 0 22px; line-height: 1.8; }
+.dorm-scope { font-size: 12px; color: #616161; margin: 12px 0 0; line-height: 1.8; }
 .warehouse-empty { margin: 12px 0 22px; padding: 28px 18px; text-align: center; border: 1px solid var(--line); border-radius: 13px; }
 .warehouse-empty > .icon { width: 30px; height: 30px; margin-bottom: 15px; }
 .warehouse-empty h3 { font-size: 18px; }
@@ -84,7 +84,7 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
   .dorm-switcher > .icon { display: none; }
   .dorm-popover { position: fixed; left: 12px; right: 12px; top: 72px; width: auto; max-width: none; max-height: calc(100dvh - 90px); }
   .overview-grid { grid-template-columns: 1fr; }
-  .dorm-scope { margin-top: -5px; font-size: 11px; }
+  .dorm-scope { margin-top: 10px; font-size: 11px; }
 }
 .window-tools { display: flex; gap: 5px; margin-left: auto; }
 .icon-button { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; }
