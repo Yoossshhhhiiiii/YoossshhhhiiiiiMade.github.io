@@ -479,6 +479,7 @@ function setup({ authenticated = true, initialized = true, sdk = true, legacy = 
   };
   if (sdk) w.supabase = { createClient: () => client };
   w.eval(cloudConfig);
+  w.INVENTORY_CLOUD_CONFIG = { ...w.INVENTORY_CLOUD_CONFIG, multiDorm: false };
   if (configOverride) w.INVENTORY_CLOUD_CONFIG = { ...w.INVENTORY_CLOUD_CONFIG, ...configOverride };
   w.eval(cloud); w.eval(app);
   const q = selector => w.document.querySelector(selector);
