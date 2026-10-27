@@ -37,6 +37,55 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .window-lights span:nth-child(2) { background: #949494; }
 .window-lights span:nth-child(3) { background: #b6b6b6; }
 .window-title { font-size: 12px; font-weight: 500; }
+.multi-dorm .window-lights, .multi-dorm .window-title { display: none; }
+.dorm-control { position: relative; min-width: 0; }
+.dorm-switcher { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; max-width: 280px; }
+.dorm-switcher strong { font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dorm-switcher .icon { width: 17px; height: 17px; flex: 0 0 17px; }
+.dorm-switcher:hover, .dorm-switcher[aria-expanded="true"] { background: #f6f6f6; border-color: #111; }
+.dorm-popover { position: absolute; z-index: 45; top: calc(100% + 10px); left: 0; width: 360px; max-width: calc(100vw - 32px); max-height: calc(100dvh - 110px); overflow-y: auto; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 12px; box-shadow: 0 18px 50px #0000001a; }
+.picker-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; padding: 7px 6px 0; }
+.picker-heading h2 { font-size: 17px; }
+.picker-heading p, .picker-role { font-size: 11px; color: #616161; line-height: 1.8; margin-top: 8px; }
+.picker-role { margin: 15px 6px 10px; }
+.dorm-options { display: grid; gap: 4px; }
+.dorm-option { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 66px; padding: 12px; border: 1px solid transparent; border-radius: 10px; text-align: left; }
+.dorm-option.selected { border-color: #111; background: #f5f5f5; }
+.dorm-option:hover { background: #f5f5f5; }
+.dorm-option > .icon { width: 20px; height: 20px; }
+.dorm-option strong { display: block; font-size: 14px; font-weight: 500; }
+.dorm-option small { display: block; font-size: 11px; color: #616161; margin-top: 5px; }
+.dorm-option > span:last-child { margin-left: auto; }
+.all-dorms-button { display: flex; align-items: center; width: 100%; min-height: 66px; gap: 12px; padding: 14px 10px 5px; margin-top: 10px; border-top: 1px solid var(--line); text-align: left; font-size: 13px; }
+.all-dorms-button small { display: block; font-size: 10px; color: #616161; margin-top: 6px; }
+.all-dorms-button > span:last-child { margin-left: auto; }
+.dorm-scope { font-size: 12px; color: #616161; margin: -8px 0 22px; line-height: 1.8; }
+.warehouse-empty { margin: 12px 0 22px; padding: 28px 18px; text-align: center; border: 1px solid var(--line); border-radius: 13px; }
+.warehouse-empty > .icon { width: 30px; height: 30px; margin-bottom: 15px; }
+.warehouse-empty h3 { font-size: 18px; }
+.warehouse-empty p { font-size: 12px; line-height: 1.8; color: #616161; margin: 12px 0 20px; }
+.empty-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.dorm-overview-card { border: 1px solid var(--line); border-radius: 13px; padding: 20px; }
+.overview-card-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.overview-card-title h2 { font-size: 17px; }
+.overview-card-title > span, .dorm-overview-card > p { font-size: 11px; color: #616161; }
+.overview-numbers { display: grid; grid-template-columns: 1fr 1fr; margin: 22px 0 14px; }
+.overview-numbers > div + div { border-left: 1px solid var(--line); padding-left: 18px; }
+.overview-numbers span { display: block; font-size: 11px; color: #616161; }
+.overview-numbers strong { display: block; font-size: 30px; font-weight: 500; margin-top: 7px; }
+.overview-numbers small { font-size: 11px; font-weight: 400; margin-left: 6px; }
+.dorm-overview-card > button { margin-top: 18px; width: 100%; }
+@media (max-width: 679px) {
+  .multi-dorm .windowbar { position: relative; gap: 8px; min-height: 60px; padding-inline: 12px; }
+  .multi-dorm .window-tools { gap: 0; }
+  .multi-dorm .window-tools > .icon-button { width: 34px; min-width: 34px; }
+  .dorm-switcher { max-width: calc(100vw - 162px); font-size: 12px; padding-inline: 8px; gap: 7px; }
+  .dorm-switcher > .icon { display: none; }
+  .dorm-popover { position: fixed; left: 12px; right: 12px; top: 72px; width: auto; max-width: none; max-height: calc(100dvh - 90px); }
+  .overview-grid { grid-template-columns: 1fr; }
+  .dorm-scope { margin-top: -5px; font-size: 11px; }
+}
 .window-tools { display: flex; gap: 5px; margin-left: auto; }
 .icon-button { width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; }
 .icon-button:hover { background: var(--muted); }

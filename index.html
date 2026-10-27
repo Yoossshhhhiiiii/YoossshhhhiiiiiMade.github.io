@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="color-scheme" content="light" />
-    <meta name="inventory-version" content="20261022-readonly-1" />
+    <meta name="inventory-version" content="20261027-three-dorms-1" />
     <meta name="description" content="水電材料庫存與倉位管理" />
     <script>
       document.documentElement.classList.add('intro-active');
@@ -18,7 +18,7 @@
       }, 10000);
     </script>
     <link rel="icon" type="image/svg+xml" href="favicon.svg?v=20261005-intro-1" />
-    <link rel="stylesheet" href="styles.css?v=20261022-readonly-1" />
+    <link rel="stylesheet" href="styles.css?v=20261027-three-dorms-1" />
     <script src="intro.js?v=20261005-intro-1" defer></script>
     <title>庫存管家｜水電材料管理</title>
   </head>
@@ -50,6 +50,14 @@
       <header class="windowbar">
         <div class="window-lights" aria-hidden="true"><span></span><span></span><span></span></div>
         <span class="window-title">庫存管家</span>
+        <div class="dorm-control hidden" id="dormControl">
+          <button class="dorm-switcher" id="dormButton" type="button" aria-expanded="false" aria-controls="dormPopover"><svg class="icon" aria-hidden="true"><use href="#icon-layers" /></svg><strong id="currentDormName">選擇倉庫</strong><span aria-hidden="true">⌄</span></button>
+          <section class="dorm-popover hidden" id="dormPopover" aria-label="切換宿舍倉庫">
+            <div class="picker-heading"><div><h2>切換宿舍</h2><p>每個倉庫的材料、位置與紀錄各自獨立。</p></div><button class="icon-button" id="closeDormPicker" type="button" aria-label="關閉宿舍選單">×</button></div>
+            <p class="picker-role" id="dormRole"></p><div class="dorm-options" id="dormOptions"></div>
+            <button class="all-dorms-button hidden" id="allDormsButton" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-chart" /></svg><span>全部倉庫總覽<small>查看你有權限的倉庫，選擇後進入管理</small></span><span aria-hidden="true">→</span></button>
+          </section>
+        </div>
         <div class="window-tools">
           <button class="icon-button" id="scanButton" type="button" aria-label="開始掃描倉庫 QR Code" title="掃描倉庫 QR Code"><svg class="icon" aria-hidden="true"><use href="#icon-qr" /></svg></button>
           <button class="icon-button" id="notifyButton" type="button" aria-label="通知設定" title="通知設定"><svg class="icon" aria-hidden="true"><use href="#icon-bell" /></svg></button>
@@ -100,6 +108,8 @@
             </div>
           </section>
           <section class="cloud-panel hidden" id="readOnlyNotice" role="status" aria-label="唯讀權限"><strong>唯讀模式</strong><p class="cloud-detail">你可以查看全部庫存、倉庫位置及統計；不能新增、修改、刪除或增減庫存。</p></section>
+          <p class="dorm-scope hidden" id="dormScope" role="status"></p>
+          <section class="overview-grid hidden" id="dormOverview" aria-label="有權限的倉庫總覽"></section>
           <section class="summary-grid" id="summaryPanel" aria-label="庫存摘要">
             <article class="summary-card"><span>材料項目</span><strong id="materialCount">0</strong><small>項</small></article>
             <article class="summary-card warning"><span>待補庫存</span><strong id="lowStockCount">0</strong><small>項</small></article>
@@ -111,6 +121,7 @@
           </section>
           <section class="workspace-panel" id="inventoryPanel" aria-labelledby="inventoryHeading">
             <div class="section-heading"><h2 id="inventoryHeading">材料清單</h2><span class="section-count" id="filteredMaterialCount"></span></div>
+            <div class="warehouse-empty hidden" id="warehouseEmpty"><svg class="icon" aria-hidden="true"><use href="#icon-package" /></svg><h3>這個倉庫還沒有材料</h3><p id="warehouseEmptyHint"></p><div class="empty-actions" id="warehouseEmptyActions"><button class="primary-button" id="emptyAddLocation" type="button">1. 增加倉庫位置</button><button class="secondary-button" id="emptyAddMaterial" type="button">2. 新增第一筆材料</button></div></div>
             <div class="filters">
               <label class="search-box"><svg class="icon" aria-hidden="true"><use href="#icon-search" /></svg><input id="searchInput" type="search" aria-label="搜尋材料名稱、規格或詳細位置" placeholder="搜尋材料名稱或位置" /></label>
               <div class="location-filter-group"><label class="select-box"><svg class="icon" aria-hidden="true"><use href="#icon-pin" /></svg><select id="locationFilter" aria-label="選擇倉庫位置"></select></label><div class="location-actions" role="group" aria-label="管理倉庫位置"><button class="add-location-button" type="button" id="addLocationFromFilter" aria-label="增加倉庫位置">增加＋</button><button class="add-location-button" type="button" id="deleteLocationFromFilter" aria-label="刪除倉庫位置">刪除X</button></div></div>
@@ -293,9 +304,9 @@
       <div class="modal-backdrop" data-cancel-logout></div><div class="modal-card"><h2 id="logoutTitle">確定登出這台裝置？</h2><p class="cloud-detail">雲端庫存、紀錄和其他裝置的登入不受影響；此裝置的舊資料仍會保留。</p><p id="logoutMessage" class="cloud-detail" role="alert"></p><div class="modal-actions"><button class="secondary-button" id="cancelLogout" type="button" data-cancel-logout>取消</button><button class="primary-button" id="confirmLogout" type="button">確定</button></div></div>
     </div>
     <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-    <script src="cloud-config.js?v=20261022-readonly-1"></script>
+    <script src="cloud-config.js?v=20261027-three-dorms-1"></script>
     <script src="vendor/supabase-2.117.3.js"></script>
-    <script src="cloud.js?v=20261022-readonly-1"></script>
-    <script src="app.js?v=20261022-readonly-1"></script>
+    <script src="cloud.js?v=20261027-three-dorms-1"></script>
+    <script src="app.js?v=20261027-three-dorms-1"></script>
   </body>
 </html>

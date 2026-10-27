@@ -2,11 +2,13 @@
   'use strict';
   const config = window.INVENTORY_CLOUD_CONFIG;
   const enabled = config?.enabled === true || (config == null && document.documentElement.dataset.storageMode === 'cloud');
+  const multiDorm = config?.multiDorm === true;
+  const dormIds = ['d7', 'pair1', 'pair2'];
   const legacyKeys = ['inventory-materials', 'inventory-transactions', 'inventory-locations'];
   const prefix = `inventory-cloud-pending-v1:${config?.url || ''}:`;
   const maxInteger = 2147483647;
   const usernamePattern = /^[a-z0-9][a-z0-9_-]{2,31}$/;
-  const state = { mode: 'starting', session: null, snapshot: null, busy: false, pending: [], message: '', revision: -1, lastSyncedAt: null };
+  const state = { mode: 'starting', session: null, snapshot: null, busy: false, pending: [], message: '', revision: -1, lastSyncedAt: null, dorms: [], dormId: null };
   let client;
   let hooks = {};
   let generation = 0;
@@ -166,6 +168,8 @@
       if (!record || !/^[0-9a-f-]{36}$/i.test(record.id) || !record.operation || !record.payload) {
         throw new Error('待確認紀錄格式異常，請保留資料並聯絡管理員。');
       }
+      // Existing single-warehouse receipts always belong to 學七舍.
+      if (multiDorm && !dormIds.includes(record.dormId ?? 'd7')) throw new Error('待確認操作的倉庫不明，請保留資料並聯絡管理員。');
       records.push({ ...record, key });
     }
     return records;
@@ -234,6 +238,7 @@
       || !Array.isArray(snapshot.materials) || !Array.isArray(snapshot.transactions) || !Array.isArray(snapshot.locations)) {
       throw new Error('雲端回傳格式異常，暫停異動。');
     }
+    if (multiDorm && snapshot.dormId !== state.dormId) throw new Error('回傳倉庫不符，暫停異動。');
     if (snapshot.revision < state.revision) return;
     state.snapshot = copy(snapshot); state.revision = snapshot.revision;
     state.lastSyncedAt = new Date().toISOString();
@@ -248,7 +253,24 @@
     const current = generation;
     refreshing = (async () => {
       try {
-        const { data, error } = await client.rpc('warehouse_snapshot');
+        if (multiDorm) {
+          const catalog = await client.rpc('warehouse_dorms');
+          if (current !== generation) return;
+          if (catalog.error) throw catalog.error;
+          if (!Array.isArray(catalog.data) || catalog.data.some(dorm => !dormIds.includes(dorm.id) || typeof dorm.name !== 'string' || typeof dorm.canWrite !== 'boolean') || new Set(catalog.data.map(dorm => dorm.id)).size !== catalog.data.length) throw new Error('雲端倉庫清單格式異常。');
+          state.dorms = copy(catalog.data);
+          if (!state.dorms.length) throw { code: '42501', message: 'WAREHOUSE_ACCESS_DENIED' };
+          if (!state.dorms.some(dorm => dorm.id === state.dormId)) {
+            let preferred;
+            try { preferred = localStorage.getItem(`${prefix}selected-dorm:${state.session.user.id}`); } catch { /* Selection is optional, never an authority. */ }
+            const pendingDorm = state.pending[0] && (state.pending[0].dormId ?? 'd7');
+            state.dormId = state.dorms.find(dorm => dorm.id === (pendingDorm || preferred))?.id || state.dorms[0].id;
+            state.snapshot = null; state.revision = -1; state.lastSyncedAt = null;
+            hooks.clearSnapshot?.();
+          }
+          publish();
+        }
+        const { data, error } = await client.rpc(multiDorm ? 'warehouse_dorm_snapshot' : 'warehouse_snapshot', multiDorm ? { p_dorm_id: state.dormId } : undefined);
         if (current !== generation) return;
         if (error) throw error;
         applySnapshot(data); state.pending = readPending(); publish();
@@ -256,7 +278,7 @@
         if (current !== generation) return;
         state.mode = error?.code === '42501' ? 'denied' : state.snapshot ? 'offline' : 'error';
         state.message = errorText(error);
-        if (state.mode === 'denied') { state.snapshot = null; hooks.clearSnapshot?.(); }
+        if (state.mode === 'denied') { state.snapshot = null; state.dorms = []; state.dormId = null; hooks.clearSnapshot?.(); }
         publish();
       } finally { if (current === generation) { refreshing = undefined; publish(); } }
     })();
@@ -269,6 +291,7 @@
     generation++; refreshing = undefined;
     state.session = session; state.snapshot = null; state.revision = -1; state.message = ''; state.lastSyncedAt = null;
     state.pending = []; backupSignature = ''; clearInterval(poll);
+    state.dorms = []; state.dormId = null;
     el('confirmPhoneImport').checked = false; el('confirmSavedBackup').checked = false;
     hooks.clearSnapshot?.();
     if (!session) { state.mode = 'signed-out'; publish(); return; }
@@ -292,8 +315,9 @@
 
   async function sendRecord(record) {
     const current = generation;
-    const { data, error } = await client.rpc('warehouse_mutate', {
-      p_request_id: record.id, p_operation: record.operation, p_payload: record.payload
+    const recordDorm = record.dormId ?? 'd7';
+    const { data, error } = await client.rpc(multiDorm ? 'warehouse_dorm_mutate' : 'warehouse_mutate', {
+      ...(multiDorm ? { p_dorm_id: recordDorm } : {}), p_request_id: record.id, p_operation: record.operation, p_payload: record.payload
     });
     if (error) {
       if (definitiveFailure(error)) localStorage.removeItem(record.key);
@@ -303,7 +327,8 @@
       localStorage.removeItem(record.key);
       throw new Error('登入狀態已變更，請重新登入確認結果。');
     }
-    applySnapshot(data);
+    if (!multiDorm || recordDorm === state.dormId) applySnapshot(data);
+    else if (data?.dormId !== recordDorm || !Array.isArray(data.materials)) throw new Error('待確認操作的回傳倉庫不符。');
     localStorage.removeItem(record.key);
     return data;
   }
@@ -316,7 +341,7 @@
     if (state.pending.length) throw new Error('請先確認待處理操作，避免重複異動。');
     if (operation !== 'import_phone' && !canWrite()) throw new Error('目前無法同步，尚未異動庫存。');
     if (operation === 'import_phone' && (state.mode !== 'setup' || !state.snapshot?.canImport)) throw new Error('目前不能首次匯入。');
-    const record = { id: crypto.randomUUID(), operation, payload: copy(payload) };
+    const record = { id: crypto.randomUUID(), operation, payload: copy(payload), ...(multiDorm ? { dormId: state.dormId } : {}) };
     record.key = `${pendingPrefix()}${record.id}`;
     // Persist BEFORE sending. Storage errors abort rather than losing retry identity.
     localStorage.setItem(record.key, JSON.stringify(record));
@@ -348,7 +373,19 @@
       }
       state.message = errorText(error);
     }
-    finally { state.busy = false; state.pending = readPending(); publish(); }
+    finally { state.busy = false; state.pending = readPending(); publish(); if (!state.pending.length) void refresh(); }
+  }
+
+  async function selectDorm(id) {
+    if (!multiDorm || !state.session || id === state.dormId || !state.dorms.some(dorm => dorm.id === id)) return false;
+    if (state.busy || state.pending.length) throw new Error('請先確認待處理操作，再切換倉庫。');
+    generation++; refreshing = undefined;
+    state.dormId = id; state.snapshot = null; state.revision = -1; state.lastSyncedAt = null;
+    state.mode = 'loading'; state.message = '';
+    try { localStorage.setItem(`${prefix}selected-dorm:${state.session.user.id}`, id); } catch { /* No persistent selection is needed for writes. */ }
+    hooks.clearSnapshot?.(); publish();
+    await refresh();
+    return state.mode === 'ready';
   }
 
   async function start(callbacks) {
@@ -358,7 +395,7 @@
     el('backupDeviceFromPanel').addEventListener('click', backupDevice);
     el('backupCloudButton').addEventListener('click', () => {
       if (state.session && state.snapshot?.initialized) download({ format: 'warehouse-cloud-backup', schemaVersion: 1,
-        exportedAt: new Date().toISOString(), inventory: state.snapshot }, `庫存管家-雲端備份-${new Date().toISOString().slice(0, 10)}.json`);
+        exportedAt: new Date().toISOString(), inventory: state.snapshot }, `庫存管家-${state.snapshot.dormName || '學七舍'}-雲端備份-${new Date().toISOString().slice(0, 10)}.json`);
     });
     for (const id of ['confirmPhoneImport', 'confirmSavedBackup']) el(id).addEventListener('change', publish);
     el('cloudRefreshButton').addEventListener('click', () => void refresh());
@@ -475,6 +512,6 @@
     if (restoreFocus) el('accountButton')?.focus();
   }
 
-  window.InventoryCloud = Object.freeze({ start, canWrite, mutate, refresh, backupDevice,
+  window.InventoryCloud = Object.freeze({ start, canWrite, mutate, refresh, selectDorm, backupDevice,
     legacyInventory, validateImport, status: () => ({ ...state, session: !!state.session }) });
 })();

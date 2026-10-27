@@ -81,6 +81,7 @@ const MATERIALS_PER_PAGE = 5;
 let materialPage = 1;
 let lowStockOnly = false;
 const $ = id => document.getElementById(id);
+let dormPickerSignature = '';
 
 function save() {
   if (cloudEnabled) throw new Error('雲端模式不可改寫裝置舊資料');
@@ -120,7 +121,7 @@ function renderAccessControls() {
     $('deleteLocationModal').classList.add('hidden');
   }
   for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'deleteLocationFromFilter', 'deleteLocationFromPage']) {
-    $(id).classList.toggle('hidden', readOnly);
+    $(id).classList.toggle('hidden', readOnly || (id === 'newMaterialButton' && document.querySelector('.app-shell').dataset.view === 'overview'));
   }
   for (const id of ['newMaterialButton', 'addLocationFromPage', 'addLocationFromFilter', 'addLocationFromForm', 'saveMaterialButton', 'confirmAdjustment', 'saveLocationButton']) {
     if ($(id)) $(id).disabled = disabled;
@@ -140,10 +141,56 @@ function renderAccessControls() {
     button.classList.toggle('hidden', readOnly);
   });
   document.querySelectorAll('#materialList [data-action]').forEach(button => { button.disabled = disabled; button.classList.toggle('hidden', readOnly); });
+  renderDormControls();
 }
 
 function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+
+function closeDormPicker(focus = false) {
+  $('dormPopover').classList.add('hidden'); $('dormButton').setAttribute('aria-expanded', 'false');
+  if (focus) $('dormButton').focus();
+}
+
+function renderDormControls() {
+  const status = window.InventoryCloud?.status();
+  const enabled = cloudEnabled && window.INVENTORY_CLOUD_CONFIG?.multiDorm === true && status?.session && status.dorms.length > 0;
+  $('dormControl').classList.toggle('hidden', !enabled);
+  $('dormScope').classList.toggle('hidden', !enabled);
+  document.querySelector('.app-shell').classList.toggle('multi-dorm', !!enabled);
+  if (!enabled) { closeDormPicker(); $('dormOverview').innerHTML = ''; dormPickerSignature = ''; return; }
+  const overview = document.querySelector('.app-shell').dataset.view === 'overview';
+  const selected = status.dorms.find(dorm => dorm.id === status.dormId);
+  $('currentDormName').textContent = overview ? '全部倉庫總覽' : selected?.name || '選擇倉庫';
+  $('dormButton').setAttribute('aria-label', `切換宿舍，目前${$('currentDormName').textContent}`);
+  $('dormButton').disabled = status.busy || status.pending.length > 0;
+  $('dormScope').textContent = overview ? `可查看 ${status.dorms.length} 個倉庫 · 各倉庫獨立管理` : `${selected?.name || ''} · ${status.snapshot?.canWrite === true ? '可管理' : status.snapshot?.canWrite === false ? '唯讀' : '正在確認權限'} · ${status.mode === 'ready' ? '雲端已同步' : '同步中或暫時離線'}`;
+  $('dormRole').textContent = `此帳號可進入 ${status.dorms.length} 個倉庫；權限由雲端驗證。`;
+  const dorms = status.dorms.map(dorm => dorm.id === status.dormId && status.snapshot ? { ...dorm, materialCount: materials.length, locationCount: customLocations.length, lowCount: materials.filter(isLow).length, canWrite: status.snapshot.canWrite === true } : dorm);
+  const signature = JSON.stringify([dorms, status.dormId]);
+  if (signature !== dormPickerSignature) {
+    dormPickerSignature = signature;
+    $('dormOptions').innerHTML = dorms.map(dorm => `<button class="dorm-option ${dorm.id === status.dormId ? 'selected' : ''}" type="button" data-dorm-id="${escapeHTML(dorm.id)}" aria-pressed="${dorm.id === status.dormId}"><svg class="icon" aria-hidden="true"><use href="#icon-layers" /></svg><span><strong>${escapeHTML(dorm.name)}</strong><small>${dorm.canWrite ? '可管理' : '唯讀'} · ${dorm.materialCount} 項材料</small></span><span aria-hidden="true">${dorm.id === status.dormId ? '✓' : '→'}</span></button>`).join('');
+    $('dormOverview').innerHTML = dorms.map(dorm => `<article class="dorm-overview-card"><div class="overview-card-title"><h2>${escapeHTML(dorm.name)}</h2><span>${dorm.canWrite ? '可管理' : '唯讀'}</span></div><div class="overview-numbers"><div><span>材料項目</span><strong>${dorm.materialCount}<small>項</small></strong></div><div><span>待補庫存</span><strong>${dorm.lowCount}<small>項</small></strong></div></div><p>${dorm.locationCount} 個倉庫位置</p><button class="secondary-button" type="button" data-dorm-id="${escapeHTML(dorm.id)}">進入倉庫 →</button></article>`).join('');
+  }
+  $('allDormsButton').classList.toggle('hidden', status.dorms.length < 2);
+  const empty = !!status.snapshot?.initialized && !materials.length;
+  $('warehouseEmpty').classList.toggle('hidden', !empty);
+  $('warehouseEmptyHint').textContent = status.snapshot?.canWrite === true ? customLocations.length ? '已有倉庫位置，可以新增第一筆材料。' : '先增加存放位置，再加入材料與初始庫存。' : '請由有管理權限的帳號新增倉庫位置與材料。';
+  $('warehouseEmptyActions').classList.toggle('hidden', status.snapshot?.canWrite !== true);
+  $('emptyAddLocation').disabled = !canModifyInventory();
+  $('emptyAddMaterial').disabled = !canModifyInventory() || !customLocations.length;
+}
+
+async function selectDormFromControl(event) {
+  const button = event.target.closest('[data-dorm-id]');
+  if (!button) return;
+  closeDormPicker();
+  try {
+    await window.InventoryCloud.selectDorm(button.dataset.dormId);
+    setView('home'); render(); $('pageTitle').focus();
+  } catch (error) { toast(error.message); }
 }
 
 function isLow(item) { return item.alert !== null && item.alert !== undefined && item.stock <= item.alert; }
@@ -275,23 +322,28 @@ function setView(view = 'home') {
     home: ['倉庫，一目了然。', '找到材料，記錄每一次進出。'],
     materials: ['每一件，都有位置。', '搜尋材料，快速確認庫存與存放位置。'],
     stats: ['每次使用，都有跡可循。', '選擇月份、周或日期區間，查看材料、原因與備註。'],
-    locations: ['找到對的位置。', '從樓層到倉庫，整理每個存放位置。']
+    locations: ['找到對的位置。', '從樓層到倉庫，整理每個存放位置。'],
+    overview: ['每個倉庫，一目了然。', '各倉庫獨立管理，選擇後查看材料、庫存與異動。']
   };
   if (!headings[view]) return;
+  if (view === 'overview' && (window.InventoryCloud?.status().dorms.length || 0) < 2) return;
   document.querySelector('.app-shell').dataset.view = view;
   $('pageTitle').textContent = headings[view][0];
   $('pageSubtitle').textContent = headings[view][1];
-  $('summaryPanel').classList.toggle('hidden', view === 'locations');
+  $('summaryPanel').classList.toggle('hidden', view === 'locations' || view === 'overview');
   $('inventoryPanel').classList.toggle('hidden', view !== 'home' && view !== 'materials');
   $('todayPanel').classList.toggle('hidden', view !== 'home');
   $('statsPanel').classList.toggle('hidden', view !== 'stats');
   $('locationsPanel').classList.toggle('hidden', view !== 'locations');
+  $('dormOverview').classList.toggle('hidden', view !== 'overview');
+  closeDormPicker();
   document.querySelectorAll('.nav-button[data-view]').forEach(button => {
     const selected = button.dataset.view === view;
     button.classList.toggle('active', selected);
     if (selected) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
+  renderAccessControls();
 }
 
 function toggleLowStock(force) {
@@ -976,6 +1028,19 @@ function init() {
   $('statsEndDate').value = monthRange.end;
   renderLocationOptions();
   render();
+  $('dormButton').addEventListener('click', () => {
+    if ($('dormPopover').classList.contains('hidden')) { $('dormPopover').classList.remove('hidden'); $('dormButton').setAttribute('aria-expanded', 'true'); $('closeDormPicker').focus(); }
+    else closeDormPicker(true);
+  });
+  $('closeDormPicker').addEventListener('click', () => closeDormPicker(true));
+  $('dormOptions').addEventListener('click', selectDormFromControl);
+  $('dormOverview').addEventListener('click', selectDormFromControl);
+  $('allDormsButton').addEventListener('click', () => setView('overview'));
+  $('emptyAddLocation').addEventListener('click', () => openLocationForm());
+  $('emptyAddMaterial').addEventListener('click', () => openMaterialForm());
+  document.addEventListener('click', event => { if (!event.target.closest('#dormControl')) closeDormPicker(); });
+  document.addEventListener('focusin', event => { if (!event.target.closest('#dormControl')) closeDormPicker(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !$('dormPopover').classList.contains('hidden')) closeDormPicker(true); });
   document.querySelectorAll('.nav-button[data-view]').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
   $('lowStockToggle').addEventListener('click', () => toggleLowStock());
   $('lowStockFilter').addEventListener('click', () => toggleLowStock(true));
@@ -1100,7 +1165,10 @@ function init() {
     toast(isLow(updated) ? `${updated.name} 已異動，庫存${updated.stock === updated.alert ? '已達' : '低於'}警戒值` : '庫存異動已完成');
   });
   $('closeStats').onclick = () => setView('home');
-  $('scanButton').onclick = () => { $('locationFilter').value = '12樓西'; lowStockOnly = false; setView('materials'); resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單'); };
+  $('scanButton').onclick = () => {
+    if (window.INVENTORY_CLOUD_CONFIG?.multiDorm === true) return toast('QR 掃描尚未設定，請使用此倉庫的位置選單尋找材料。');
+    $('locationFilter').value = '12樓西'; lowStockOnly = false; setView('materials'); resetMaterialPage(); toast('掃描成功：已開啟 12樓西 材料清單');
+  };
   $('notifyButton').onclick = () => toast('正式版將在低於警戒值時傳送 LINE 通知');
   if (cloudEnabled) {
     $('cloudPanel').classList.remove('hidden');
@@ -1129,6 +1197,10 @@ function init() {
         closeTransactionEdit(true); closeAdjustment(true); closeMaterialForm();
         $('locationModal').classList.add('hidden'); locationReturnToMaterial = false;
         $('deleteLocationModal').classList.add('hidden');
+        materialPage = 1; statsTransactionsPage = 1; statsTransactionsRange = ''; lowStockOnly = false;
+        $('searchInput').value = ''; $('locationFilter').value = '全部位置';
+        $('warehouseEmpty').classList.add('hidden');
+        setView('home');
         renderLocationOptions(); render();
       },
       onStatus: renderAccessControls,
