@@ -153,6 +153,8 @@ h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.3px;
 .cloud-confirm input { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; accent-color: #000; }
 .primary-button, .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 43px; border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 500; background: var(--surface); color: var(--ink); border: 1px solid var(--ink); }
 .primary-button:hover, .secondary-button:hover { background: var(--muted); }
+#saveMaterialButton, #saveLocationButton, #confirmDeleteLocation { background: #090909; color: #fff; border-color: #090909; }
+#saveMaterialButton:hover:not(:disabled), #saveLocationButton:hover:not(:disabled), #confirmDeleteLocation:hover:not(:disabled) { background: #303030; border-color: #303030; }
 .new-material-button { white-space: nowrap; font-size: 12px; padding: 10px 13px; }
 .secondary-button { border-color: var(--line); }
 .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 14px; padding: 19px 0; margin-top: 25px; }
